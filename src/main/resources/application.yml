@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: zhitu-agent-java
+  config:
+    import: optional:file:.env[.properties]
+  data:
+    redis:
+      host: ${ZHITU_REDIS_HOST:localhost}
+      port: ${ZHITU_REDIS_PORT:6379}
+      password: ${ZHITU_REDIS_PASSWORD:}
+      database: ${ZHITU_REDIS_DATABASE:0}
+
+server:
+  port: 8080
+
+zhitu:
+  app:
+    system-prompt-location: classpath:system-prompt/chat-agent.txt
+  llm:
+    mock-mode: ${ZHITU_LLM_MOCK_MODE:true}
+    base-url: ${ZHITU_CHAT_BASE_URL:}
+    api-key: ${ZHITU_CHAT_API_KEY:}
+    model-name: ${ZHITU_CHAT_MODEL_NAME:mock-agent}
+  embedding:
+    base-url: ${ZHITU_EMBEDDING_URL:}
+    api-key: ${ZHITU_EMBEDDING_API_KEY:}
+    model-name: ${ZHITU_EMBEDDING_MODEL_NAME:}
+  rerank:
+    url: ${ZHITU_RERANK_URL:}
+    api-key: ${ZHITU_RERANK_API_KEY:}
+    model-name: ${ZHITU_RERANK_MODEL_NAME:}
+  pgvector:
+    host: ${ZHITU_PGVECTOR_HOST:localhost}
+    port: ${ZHITU_PGVECTOR_PORT:5432}
+    database: ${ZHITU_PGVECTOR_DATABASE:}
+    username: ${ZHITU_PGVECTOR_USERNAME:}
+    password: ${ZHITU_PGVECTOR_PASSWORD:}
+    schema: ${ZHITU_PGVECTOR_SCHEMA:public}
+    table: ${ZHITU_PGVECTOR_TABLE:zhitu_agent_knowledge}
+    min-score: ${ZHITU_PGVECTOR_MIN_SCORE:0.0}
+  infrastructure:
+    redis-enabled: ${ZHITU_REDIS_ENABLED:false}
+    pgvector-enabled: ${ZHITU_PGVECTOR_ENABLED:false}

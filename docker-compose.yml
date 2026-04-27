@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:8.4
+    container_name: zhitu-agent-redis
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zhitu-agent-postgres
+    environment:
+      POSTGRES_DB: zhitu_agent
+      POSTGRES_USER: zhitu
+      POSTGRES_PASSWORD: zhitu
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhitu -d zhitu_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

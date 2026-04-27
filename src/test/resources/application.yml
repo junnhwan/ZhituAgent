@@ -1,0 +1,3 @@
+zhitu:
+  llm:
+    mock-mode: true

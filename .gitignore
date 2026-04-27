@@ -1,0 +1,13 @@
+target/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.worktrees/
+worktrees/
+logs/
+*.log
+.env
+frontend/node_modules/
+src/main/resources/static/assets/
+src/main/resources/static/index.html
