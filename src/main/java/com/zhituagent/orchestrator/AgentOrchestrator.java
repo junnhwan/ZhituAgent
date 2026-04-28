@@ -1,6 +1,7 @@
 package com.zhituagent.orchestrator;
 
 import com.zhituagent.rag.KnowledgeSnippet;
+import com.zhituagent.rag.RagRetrievalResult;
 import com.zhituagent.rag.RagRetriever;
 import com.zhituagent.tool.ToolRegistry;
 import com.zhituagent.tool.ToolResult;
@@ -28,9 +29,9 @@ public class AgentOrchestrator {
             return RouteDecision.tool("time", toolResult);
         }
 
-        List<KnowledgeSnippet> snippets = ragRetriever.retrieve(userMessage, 3);
-        if (!snippets.isEmpty()) {
-            return RouteDecision.denseRetrieval(snippets);
+        RagRetrievalResult retrievalResult = ragRetriever.retrieveDetailed(userMessage, 3);
+        if (!retrievalResult.snippets().isEmpty()) {
+            return RouteDecision.retrieval(retrievalResult);
         }
 
         return RouteDecision.direct();

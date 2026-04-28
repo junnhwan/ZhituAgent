@@ -5,7 +5,7 @@
 
 ## 总体状态
 
-项目第一阶段已经完成，`Task 1` 到 `Task 4` 的后端主链、trace 基线和基础评估样例都已经落地，并已完成阶段性提交。底层关键基础设施也不再只有本地兜底，Redis 与 pgvector 的真实运行链路都已完成首轮联调验证。
+项目第一阶段已经完成，`Task 1` 到 `Task 4` 的后端主链、trace 基线和基础评估样例都已经落地，并已完成阶段性提交。第二阶段的 `Task 1` 到 `Task 4` 第一版也已经全部落地：评估运行器、`dense recall -> rerank`、`hybrid retrieval`、Prometheus 指标、Redis 记忆并发保护都已补齐，并通过当前全量测试验证。
 
 目前状态需要明确区分：
 
@@ -17,8 +17,11 @@
 - 已完成：第一阶段基线已提交，提交号为 `f5b66c3`
 - 已完成：第二阶段优化计划文档已补入 `docs/2026-04-28-zhitu-agent-java-phase-two-plan.md`
 - 已完成：第二阶段 `Task 1` 的评估运行器与 trace 扩展第一版已落地
-- 部分完成：当前还没有接入 rerank，也没有混合检索
-- 未完成：第二阶段 `Task 2` 到 `Task 4` 还未开始主实现
+- 已完成：第二阶段 `Task 2` 的 query preprocessing 与 `dense recall -> rerank` 第一版已落地
+- 已完成：第二阶段 `Task 3` 的 hybrid retrieval 与中文优化切分第一版已落地
+- 已完成：第二阶段 `Task 4` 的 Prometheus 指标与 Redis 记忆并发保护第一版已落地
+- 已完成：`/actuator/health` 与 `/actuator/prometheus` 已完成测试覆盖
+- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `32` 个测试全部通过
 
 ## 当前进展
 
@@ -78,6 +81,165 @@
 
 - 这一版评估器先放在 `src/test/java`，避免把实验性评估逻辑过早塞进生产主链
 - 当前 trace 已经为后续 rerank / hybrid retrieval 预留字段，但真正填充这些字段要到第二阶段 `Task 2` 之后
+
+### 第二阶段 Task 2：query preprocessing 与 dense recall -> rerank
+
+状态：已完成第一版
+
+已完成内容：
+
+- 已新增 rerank 配置类：
+  - `src/main/java/com/zhituagent/config/RerankProperties.java`
+- 已将 `RerankProperties` 纳入 Spring 配置绑定：
+  - `src/main/java/com/zhituagent/config/WebConfig.java`
+- 已补充应用配置项：
+  - `zhitu.rerank.enabled`
+  - `zhitu.rerank.recall-top-k`
+  - `zhitu.rerank.final-top-k`
+  - `zhitu.rerank.timeout-millis`
+- 已新增查询预处理器：
+  - `src/main/java/com/zhituagent/rag/QueryPreprocessor.java`
+- 已新增 rerank 抽象与客户端：
+  - `src/main/java/com/zhituagent/rag/RerankClient.java`
+  - `src/main/java/com/zhituagent/rag/OpenAiCompatibleRerankClient.java`
+- 已新增检索中间态模型：
+  - `src/main/java/com/zhituagent/rag/RetrievalCandidate.java`
+  - `src/main/java/com/zhituagent/rag/RagRetrievalResult.java`
+- 已扩展 `KnowledgeSnippet`，支持同时保留：
+  - `score`
+  - `denseScore`
+  - `rerankScore`
+- 已增强 `RagRetriever`：
+  - 先对 query 做预处理
+  - dense recall 数量可配置
+  - 配置齐全时调用真实 `/v1/rerank`
+  - rerank 失败时自动降级回 dense
+  - 日志中已输出：
+    - `retrievalMode`
+    - `candidateCount`
+    - `rerankModel`
+    - `topSource`
+    - `topScore`
+- 已增强 `AgentOrchestrator` 与 `RouteDecision`：
+  - 路由决策现在可感知 `dense-rerank`
+  - 可保留 `retrievalCandidateCount`
+  - 可保留 `rerankModel`
+  - 可保留 `rerankTopScore`
+
+已完成验证：
+
+- 已先写失败测试，再补实现：
+  - `QueryPreprocessorTest`
+  - `RagRetrieverTest`
+  - `OpenAiCompatibleRerankClientTest`
+  - `AgentOrchestratorTest`
+- 已验证真实中转接口后缀：
+  - `https://router.tumuer.me/v1/rerank`
+- `.\mvnw.cmd "-Dtest=AgentOrchestratorTest,QueryPreprocessorTest,RagRetrieverTest,OpenAiCompatibleRerankClientTest" test` 已通过
+- `.\mvnw.cmd test` 已通过
+
+说明：
+
+- 当前 rerank 已接入主链，并且后续 `Task 3` 已继续补上 hybrid retrieval
+- 当前 `BaselineEvalRunnerTest` 仍以 mock LLM 验证主链行为，不直接衡量真实回答质量
+- 当前评估样例里只有 `rag-001` 会走 dense RAG，后续应继续扩充更多能体现 rerank 收益的 case
+
+### 第二阶段 Task 3：hybrid retrieval 与中文优化切分
+
+状态：已完成第一版
+
+已完成内容：
+
+- 已新增 hybrid retrieval 配置：
+  - `src/main/java/com/zhituagent/config/RagProperties.java`
+- 已补充应用配置项：
+  - `zhitu.rag.hybrid-enabled`
+  - `zhitu.rag.lexical-top-k`
+- 已将 `DocumentSplitter` 从固定短切块升级为中文友好的长切块策略：
+  - 优先按 `。！？；.!?;` 句界切分
+  - chunk 大小提升到 `800`
+  - overlap 提升到 `160`
+- 已新增 lexical / hybrid 检索组件：
+  - `src/main/java/com/zhituagent/rag/LexicalRetriever.java`
+  - `src/main/java/com/zhituagent/rag/LexicalScoringUtils.java`
+  - `src/main/java/com/zhituagent/rag/HybridRetrievalMerger.java`
+- 已扩展 `KnowledgeStore` 抽象，支持：
+  - `lexicalSearch`
+- 已补齐本地与 pgvector 两种知识库实现的 lexical retrieval：
+  - `InMemoryKnowledgeStore`
+  - `PgVectorKnowledgeStore`
+- 已增强 `RagRetriever`：
+  - dense recall + lexical recall 合并
+  - 基于 `chunkId` 去重
+  - 支持 `hybrid`
+  - 支持 `hybrid-rerank`
+- 已新增数据库脚本：
+  - `docs/sql/03-add-hybrid-retrieval-support.sql`
+  - 作用：启用 `pg_trgm` 并为 `public.zhitu_agent_knowledge.text` 建立 trigram 索引
+
+已完成验证：
+
+- 已先写失败测试，再补实现：
+  - `DocumentSplitterTest`
+  - `HybridRetrievalMergerTest`
+  - `RagRetrieverTest`
+- `.\mvnw.cmd "-Dtest=DocumentSplitterTest,HybridRetrievalMergerTest,RagRetrieverTest" test` 已通过
+- `.\mvnw.cmd test` 已通过
+
+说明：
+
+- 当前 hybrid retrieval 仍然保持轻量实现，没有引入 Elasticsearch 等重型检索基础设施
+- 当前 lexical retrieval 采用 PostgreSQL `ILIKE` + token 打分，并通过 trigram 索引做第一轮加速
+
+### 第二阶段 Task 4：Prometheus 指标与记忆并发保护
+
+状态：已完成第一版
+
+已完成内容：
+
+- `pom.xml` 已新增：
+  - `spring-boot-starter-actuator`
+  - `micrometer-registry-prometheus`
+- `application.yml` 已补齐：
+  - `management.defaults.metrics.export.enabled`
+  - `management.endpoints.access.default`
+  - `management.prometheus.metrics.export.enabled`
+  - `management.health.redis.enabled`
+- 已新增埋点组件：
+  - `src/main/java/com/zhituagent/metrics/ChatMetricsRecorder.java`
+  - `src/main/java/com/zhituagent/metrics/AiMetricsRecorder.java`
+  - `src/main/java/com/zhituagent/metrics/RagMetricsRecorder.java`
+  - `src/main/java/com/zhituagent/metrics/ToolMetricsRecorder.java`
+  - `src/main/java/com/zhituagent/metrics/MemoryMetricsRecorder.java`
+- 已在以下链路补齐 metrics：
+  - `ChatController`
+  - `LangChain4jLlmRuntime`
+  - `RagRetriever`
+  - `MemoryService`
+- 当前已暴露：
+  - `/actuator/health`
+  - `/actuator/prometheus`
+- 已新增 Redis 记忆锁抽象与实现：
+  - `src/main/java/com/zhituagent/memory/MemoryLock.java`
+  - `src/main/java/com/zhituagent/memory/NoopMemoryLock.java`
+  - `src/main/java/com/zhituagent/memory/RedisMemoryLock.java`
+- 已增强 `MemoryService`：
+  - 压缩前尝试抢锁
+  - 抢锁失败时保留 recent messages 并记录 `lock_miss`
+  - 无需压缩时记录 `not_needed`
+  - 压缩成功时记录 `compressed`
+
+已完成验证：
+
+- 已新增 `ObservabilityEndpointTest`
+- 已增强 `MemoryServiceTest`
+- `.\mvnw.cmd "-Dtest=ObservabilityEndpointTest,MemoryServiceTest" test` 已通过
+- `.\mvnw.cmd test` 已通过
+
+说明：
+
+- 当前 Prometheus label 保持低基数，没有把 `sessionId`、`userId`、`requestId` 直接做成指标维度
+- 当前记忆并发保护只覆盖压缩关键路径，后续还可以继续深化 summary 写回与更细粒度的并发一致性策略
 
 ### Task 1：项目骨架、基础 API、SSE
 
@@ -159,7 +321,7 @@
 说明：
 
 - 当前 RAG 还是本地内存实现，用于先打通行为 contract
-- pgvector、真实 embedding、真实 rerank 还没有正式接入主链
+- 这一节记录的是第一阶段 base contract；第二阶段已经在其上补入 pgvector、真实 embedding、真实 rerank 与 hybrid retrieval
 
 ### 当前替换阶段：真实模型调用与基础设施接口层
 
@@ -304,10 +466,14 @@ pgvector 手工联调结果：
   - `PgVectorKnowledgeStore` 已真实生效
   - `KnowledgeIngestService -> embedding -> pgvector -> RagRetriever` 的 dense RAG 主链已打通
 
-部分完成内容：
+补充说明：
 
-- `PgVectorKnowledgeStore` 目前只接了 dense embedding + vector search
-- rerank、hybrid retrieval、稀疏/稠密增强仍未进入主链
+- `PgVectorKnowledgeStore` 第一阶段只接了 dense embedding + vector search
+- 当前第二阶段已经在此基础上补入：
+  - rerank
+  - hybrid retrieval
+  - lexical retrieval
+  - 中文切分优化
 
 ## 配置与密钥
 
@@ -321,14 +487,14 @@ pgvector 手工联调结果：
 - 已新增 PostgreSQL / pgvector 初始化脚本：
   - `docs/sql/01-create-zhitu-agent-db.sql`
   - `docs/sql/02-enable-pgvector-extension.sql`
+  - `docs/sql/03-add-hybrid-retrieval-support.sql`
 
-待补充：
+当前说明：
 
-- 第二阶段需要补：
-  - rerank 主链接入
-  - hybrid retrieval
-  - 更细粒度 trace 字段增强
-  - baseline eval 运行与评估机制
+- rerank 主链接入已完成
+- hybrid retrieval 已完成第一版
+- 更细粒度 trace 字段增强已完成第一版
+- baseline eval 运行器已完成第一版
 
 ## Task 4：trace 与评估基线
 
@@ -381,6 +547,7 @@ pgvector 手工联调结果：
 
 ## 下一步
 
-1. 开始实现第二阶段 `Task 2`：接入查询预处理与 `dense recall -> rerank`
-2. 然后实现第二阶段 `Task 3`：补 hybrid retrieval 与中文优化切分
-3. 最后实现第二阶段 `Task 4`：补 Prometheus 指标与 Redis 记忆并发保护
+1. 用真实 LLM 跑 `BaselineEvalRunner`，补一版 dense / dense-rerank / hybrid-rerank 的可量化对比数据
+2. 继续扩充评估样例，特别是能体现 rerank 与 hybrid 收益的中文查询 case
+3. 深化记忆机制与上下文压缩策略，而不是只停留在当前最小 summary + recent messages
+4. 进一步补齐指标看板、错误分类与长期可观测性沉淀

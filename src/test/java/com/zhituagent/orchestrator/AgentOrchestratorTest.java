@@ -34,13 +34,17 @@ class AgentOrchestratorTest {
 
         assertThat(directDecision.path()).isEqualTo("direct-answer");
         assertThat(directDecision.toolUsed()).isFalse();
+        assertThat(directDecision.retrievalMode()).isEqualTo("none");
 
         assertThat(retrieveDecision.path()).isEqualTo("retrieve-then-answer");
         assertThat(retrieveDecision.retrievalHit()).isTrue();
         assertThat(retrieveDecision.snippets()).isNotEmpty();
+        assertThat(retrieveDecision.retrievalMode()).isEqualTo("dense");
+        assertThat(retrieveDecision.retrievalCandidateCount()).isEqualTo(1);
 
         assertThat(toolDecision.path()).isEqualTo("tool-then-answer");
         assertThat(toolDecision.toolUsed()).isTrue();
         assertThat(toolDecision.toolName()).isEqualTo("time");
+        assertThat(toolDecision.retrievalMode()).isEqualTo("none");
     }
 }

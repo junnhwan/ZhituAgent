@@ -1,5 +1,7 @@
 # Zhitu Agent Java 第二阶段优化计划
 
+> 执行状态更新（2026-04-28）：本计划中的 `Task 1` 到 `Task 4` 第一版已全部完成。当前文档继续保留为第二阶段实施前后的设计与范围基线，最新落地情况请优先结合根目录 `progress.md` 查看。
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在不改变“单模块 Spring Boot + 项目自控编排”前提下，把第一阶段已经打通的 Java Agent 主链升级成一个可量化优化、可做简历数据沉淀的后端 Agent 系统。

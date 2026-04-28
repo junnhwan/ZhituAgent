@@ -38,4 +38,8 @@ public class KnowledgeIngestService {
     public List<KnowledgeSnippet> search(String query, int limit) {
         return knowledgeStore.search(query, limit);
     }
+
+    public List<KnowledgeSnippet> lexicalSearch(String query, int limit) {
+        return knowledgeStore.lexicalSearch(query, limit);
+    }
 }

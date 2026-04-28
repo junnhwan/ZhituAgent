@@ -1,6 +1,7 @@
 package com.zhituagent.orchestrator;
 
 import com.zhituagent.rag.KnowledgeSnippet;
+import com.zhituagent.rag.RagRetrievalResult;
 import com.zhituagent.tool.ToolResult;
 
 import java.util.List;
@@ -61,6 +62,25 @@ public record RouteDecision(
                 safeSnippets.size(),
                 "",
                 0.0
+        );
+    }
+
+    public static RouteDecision retrieval(RagRetrievalResult retrievalResult) {
+        if (retrievalResult == null || retrievalResult.snippets().isEmpty()) {
+            return direct();
+        }
+
+        return new RouteDecision(
+                "retrieve-then-answer",
+                true,
+                false,
+                null,
+                null,
+                retrievalResult.snippets(),
+                retrievalResult.retrievalMode(),
+                retrievalResult.retrievalCandidateCount(),
+                retrievalResult.rerankModel(),
+                retrievalResult.rerankTopScore()
         );
     }
 }

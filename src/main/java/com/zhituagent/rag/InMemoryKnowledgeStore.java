@@ -3,7 +3,6 @@ package com.zhituagent.rag;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class InMemoryKnowledgeStore implements KnowledgeStore {
@@ -21,10 +20,30 @@ public class InMemoryKnowledgeStore implements KnowledgeStore {
             return List.of();
         }
 
-        String normalizedQuery = normalize(query);
+        String normalizedQuery = LexicalScoringUtils.normalize(query);
         List<KnowledgeSnippet> ranked = new ArrayList<>();
         for (KnowledgeChunk chunk : chunks) {
-            double score = score(normalizedQuery, normalize(chunk.content()));
+            double score = score(normalizedQuery, LexicalScoringUtils.normalize(chunk.content()));
+            if (score > 0) {
+                ranked.add(new KnowledgeSnippet(chunk.source(), chunk.chunkId(), score, chunk.content()));
+            }
+        }
+
+        return ranked.stream()
+                .sorted(Comparator.comparingDouble(KnowledgeSnippet::score).reversed())
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
+    @Override
+    public List<KnowledgeSnippet> lexicalSearch(String query, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+
+        List<KnowledgeSnippet> ranked = new ArrayList<>();
+        for (KnowledgeChunk chunk : chunks) {
+            double score = LexicalScoringUtils.scoreText(query, chunk.content());
             if (score > 0) {
                 ranked.add(new KnowledgeSnippet(chunk.source(), chunk.chunkId(), score, chunk.content()));
             }
@@ -55,15 +74,4 @@ public class InMemoryKnowledgeStore implements KnowledgeStore {
         return (double) overlap / query.length();
     }
 
-    private String normalize(String input) {
-        return input.toLowerCase(Locale.ROOT)
-                .replace("？", "")
-                .replace("。", "")
-                .replace("，", "")
-                .replace("：", "")
-                .replace(":", "")
-                .replace("\n", "")
-                .replace("\r", "")
-                .trim();
-    }
 }

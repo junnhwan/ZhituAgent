@@ -1,6 +1,7 @@
 package com.zhituagent.llm;
 
 import com.zhituagent.config.LlmProperties;
+import com.zhituagent.metrics.AiMetricsRecorder;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -13,6 +14,7 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -33,35 +35,51 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
     private static final long STREAM_TIMEOUT_SECONDS = 90;
 
     private final LlmProperties properties;
+    private final AiMetricsRecorder aiMetricsRecorder;
     private volatile ChatModel chatModel;
     private volatile StreamingChatModel streamingChatModel;
 
     public LangChain4jLlmRuntime(LlmProperties properties) {
+        this(properties, AiMetricsRecorder.noop());
+    }
+
+    @Autowired
+    public LangChain4jLlmRuntime(LlmProperties properties, AiMetricsRecorder aiMetricsRecorder) {
         this.properties = properties;
+        this.aiMetricsRecorder = aiMetricsRecorder;
     }
 
     @Override
     public String generate(String systemPrompt, List<String> messages, Map<String, Object> metadata) {
         long startNanos = System.nanoTime();
         if (shouldUseRealProvider()) {
-            ChatResponse response = getChatModel().chat(toChatMessages(systemPrompt, messages));
-            String answer = response.aiMessage() == null || response.aiMessage().text() == null
-                    ? ""
-                    : response.aiMessage().text();
-            log.info(
-                    "模型调用完成 llm.generate.completed provider=openai-compatible messageCount={} model={} latencyMs={}",
-                    messages.size(),
-                    properties.getModelName(),
-                    elapsedMillis(startNanos)
-            );
-            return answer;
+            try {
+                ChatResponse response = getChatModel().chat(toChatMessages(systemPrompt, messages));
+                String answer = response.aiMessage() == null || response.aiMessage().text() == null
+                        ? ""
+                        : response.aiMessage().text();
+                long latencyMs = elapsedMillis(startNanos);
+                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
+                log.info(
+                        "模型调用完成 llm.generate.completed provider=openai-compatible messageCount={} model={} latencyMs={}",
+                        messages.size(),
+                        properties.getModelName(),
+                        latencyMs
+                );
+                return answer;
+            } catch (RuntimeException exception) {
+                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", false, elapsedMillis(startNanos));
+                throw exception;
+            }
         }
         String answer = fallbackAnswer(messages);
+        long latencyMs = elapsedMillis(startNanos);
+        aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
         log.info(
                 "模型调用完成 llm.generate.completed provider=mock messageCount={} model={} latencyMs={}",
                 messages.size(),
                 properties.getModelName(),
-                elapsedMillis(startNanos)
+                latencyMs
         );
         return answer;
     }
@@ -108,11 +126,13 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
             });
 
             awaitStreamingCompletion(completionLatch, errorRef);
+            long latencyMs = elapsedMillis(startNanos);
+            aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", true, latencyMs);
             log.info(
                     "模型流式调用完成 llm.stream.completed provider=openai-compatible messageCount={} model={} latencyMs={}",
                     messages.size(),
                     properties.getModelName(),
-                    elapsedMillis(startNanos)
+                    latencyMs
             );
             return;
         }
@@ -124,11 +144,13 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
             }
         }
         onComplete.run();
+        long latencyMs = elapsedMillis(startNanos);
+        aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", true, latencyMs);
         log.info(
                 "模型流式调用完成 llm.stream.completed provider=mock messageCount={} model={} latencyMs={}",
                 messages.size(),
                 properties.getModelName(),
-                elapsedMillis(startNanos)
+                latencyMs
         );
     }
 
@@ -229,6 +251,7 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
 
         Throwable error = errorRef.get();
         if (error != null) {
+            aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", false, 0);
             throw new IllegalStateException("streaming chat completion failed", error);
         }
     }

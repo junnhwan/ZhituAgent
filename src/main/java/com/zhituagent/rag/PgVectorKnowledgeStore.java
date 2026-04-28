@@ -15,8 +15,15 @@ import dev.langchain4j.store.embedding.pgvector.PgVectorEmbeddingStore;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class PgVectorKnowledgeStore implements KnowledgeStore {
 
@@ -71,6 +78,58 @@ public class PgVectorKnowledgeStore implements KnowledgeStore {
         return store.search(request).matches().stream()
                 .map(this::toSnippet)
                 .toList();
+    }
+
+    @Override
+    public List<KnowledgeSnippet> lexicalSearch(String query, int limit) {
+        List<String> tokens = LexicalScoringUtils.tokens(query);
+        if (tokens.isEmpty()) {
+            return List.of();
+        }
+
+        String scoreClause = tokens.stream()
+                .map(token -> "CASE WHEN text ILIKE ? THEN 1 ELSE 0 END")
+                .collect(Collectors.joining(" + "));
+        String whereClause = IntStream.range(0, tokens.size())
+                .mapToObj(index -> "text ILIKE ?")
+                .collect(Collectors.joining(" OR "));
+        String sql = "SELECT embedding_id::text AS embedding_id, text, " +
+                "COALESCE(metadata->>'source', '') AS source, " +
+                "COALESCE(metadata->>'chunkId', '') AS chunk_id, " +
+                "(" + scoreClause + ") AS lexical_score " +
+                "FROM " + qualifiedTableName() + " " +
+                "WHERE text IS NOT NULL AND (" + whereClause + ") " +
+                "ORDER BY lexical_score DESC, embedding_id ASC " +
+                "LIMIT ?";
+
+        try (Connection connection = createDataSource().getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            int parameterIndex = 1;
+            for (String token : tokens) {
+                statement.setString(parameterIndex++, "%" + token + "%");
+            }
+            for (String token : tokens) {
+                statement.setString(parameterIndex++, "%" + token + "%");
+            }
+            statement.setInt(parameterIndex, Math.max(1, limit));
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<KnowledgeSnippet> snippets = new ArrayList<>();
+                while (resultSet.next()) {
+                    snippets.add(new KnowledgeSnippet(
+                            resultSet.getString("source"),
+                            resultSet.getString("chunk_id"),
+                            resultSet.getDouble("lexical_score"),
+                            resultSet.getString("text"),
+                            0.0,
+                            0.0
+                    ));
+                }
+                return snippets;
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("failed to execute lexical pgvector search", exception);
+        }
     }
 
     private KnowledgeSnippet toSnippet(EmbeddingMatch<TextSegment> match) {

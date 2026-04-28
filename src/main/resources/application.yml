@@ -26,9 +26,16 @@ zhitu:
     api-key: ${ZHITU_EMBEDDING_API_KEY:}
     model-name: ${ZHITU_EMBEDDING_MODEL_NAME:}
   rerank:
+    enabled: ${ZHITU_RERANK_ENABLED:true}
     url: ${ZHITU_RERANK_URL:}
     api-key: ${ZHITU_RERANK_API_KEY:}
     model-name: ${ZHITU_RERANK_MODEL_NAME:}
+    recall-top-k: ${ZHITU_RERANK_RECALL_TOP_K:20}
+    final-top-k: ${ZHITU_RERANK_FINAL_TOP_K:5}
+    timeout-millis: ${ZHITU_RERANK_TIMEOUT_MILLIS:60000}
+  rag:
+    hybrid-enabled: ${ZHITU_RAG_HYBRID_ENABLED:true}
+    lexical-top-k: ${ZHITU_RAG_LEXICAL_TOP_K:10}
   pgvector:
     host: ${ZHITU_PGVECTOR_HOST:localhost}
     port: ${ZHITU_PGVECTOR_PORT:5432}
@@ -41,3 +48,27 @@ zhitu:
   infrastructure:
     redis-enabled: ${ZHITU_REDIS_ENABLED:false}
     pgvector-enabled: ${ZHITU_PGVECTOR_ENABLED:false}
+
+management:
+  defaults:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    access:
+      default: read-only
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+    prometheus:
+      access: read-only
+  health:
+    redis:
+      enabled: ${ZHITU_REDIS_ENABLED:false}
+  prometheus:
+    metrics:
+      export:
+        enabled: true

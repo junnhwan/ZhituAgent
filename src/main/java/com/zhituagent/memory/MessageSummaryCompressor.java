@@ -12,8 +12,12 @@ public class MessageSummaryCompressor {
         this.compressionThreshold = compressionThreshold;
     }
 
+    public boolean shouldCompress(List<ChatMessageRecord> messages) {
+        return messages != null && messages.size() >= compressionThreshold;
+    }
+
     public MemorySnapshot compress(List<ChatMessageRecord> messages) {
-        if (messages.size() < compressionThreshold) {
+        if (!shouldCompress(messages)) {
             return new MemorySnapshot("", List.copyOf(messages));
         }
 
@@ -29,6 +33,14 @@ public class MessageSummaryCompressor {
                 .orElse("");
 
         return new MemorySnapshot(summary, List.copyOf(recentMessages));
+    }
+
+    public MemorySnapshot recentOnly(List<ChatMessageRecord> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return new MemorySnapshot("", List.of());
+        }
+        int splitIndex = Math.max(0, messages.size() - maxRecentMessages);
+        return new MemorySnapshot("", List.copyOf(messages.subList(splitIndex, messages.size())));
     }
 
     private String abbreviate(String content) {

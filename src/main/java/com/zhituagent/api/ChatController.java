@@ -9,6 +9,8 @@ import com.zhituagent.config.AppProperties;
 import com.zhituagent.context.ContextBundle;
 import com.zhituagent.context.ContextManager;
 import com.zhituagent.llm.LlmRuntime;
+import com.zhituagent.metrics.ChatMetricsRecorder;
+import com.zhituagent.metrics.ToolMetricsRecorder;
 import com.zhituagent.memory.MemoryService;
 import com.zhituagent.orchestrator.AgentOrchestrator;
 import com.zhituagent.orchestrator.RouteDecision;
@@ -44,6 +46,8 @@ public class ChatController {
     private final ContextManager contextManager;
     private final AgentOrchestrator agentOrchestrator;
     private final ChatTraceFactory chatTraceFactory;
+    private final ChatMetricsRecorder chatMetricsRecorder;
+    private final ToolMetricsRecorder toolMetricsRecorder;
     private final ObjectMapper objectMapper;
     private final String systemPrompt;
 
@@ -53,6 +57,8 @@ public class ChatController {
                           ContextManager contextManager,
                           AgentOrchestrator agentOrchestrator,
                           ChatTraceFactory chatTraceFactory,
+                          ChatMetricsRecorder chatMetricsRecorder,
+                          ToolMetricsRecorder toolMetricsRecorder,
                           ObjectMapper objectMapper,
                           AppProperties appProperties,
                           ResourceLoader resourceLoader) throws IOException {
@@ -62,6 +68,8 @@ public class ChatController {
         this.contextManager = contextManager;
         this.agentOrchestrator = agentOrchestrator;
         this.chatTraceFactory = chatTraceFactory;
+        this.chatMetricsRecorder = chatMetricsRecorder;
+        this.toolMetricsRecorder = toolMetricsRecorder;
         this.objectMapper = objectMapper;
         Resource resource = resourceLoader.getResource(appProperties.getSystemPromptLocation());
         this.systemPrompt = resource.getContentAsString(StandardCharsets.UTF_8);
@@ -74,6 +82,7 @@ public class ChatController {
         sessionService.ensureSession(request.sessionId(), request.userId());
         sessionService.appendMessage(request.sessionId(), request.userId(), "user", request.message());
         RouteDecision routeDecision = agentOrchestrator.decide(request.message());
+        recordToolMetric(routeDecision);
         logRouteDecision("chat.route.selected", requestId, request.sessionId(), routeDecision);
         ContextBundle contextBundle = contextManager.build(
                 systemPrompt,
@@ -107,6 +116,7 @@ public class ChatController {
                 answer.length(),
                 latencyMs
         );
+        chatMetricsRecorder.recordRequest(routeDecision.path(), false, true, latencyMs);
         return new ChatResponse(request.sessionId(), answer, traceInfo);
     }
 
@@ -117,6 +127,7 @@ public class ChatController {
         sessionService.ensureSession(request.sessionId(), request.userId());
         sessionService.appendMessage(request.sessionId(), request.userId(), "user", request.message());
         RouteDecision routeDecision = agentOrchestrator.decide(request.message());
+        recordToolMetric(routeDecision);
         logRouteDecision("chat.stream.route.selected", requestId, request.sessionId(), routeDecision);
         ContextBundle contextBundle = contextManager.build(
                 systemPrompt,
@@ -168,6 +179,7 @@ public class ChatController {
                                         answerBuilder.length(),
                                         latencyMs
                                 );
+                                chatMetricsRecorder.recordRequest(routeDecision.path(), true, true, latencyMs);
                                 emitter.send(SseEmitter.event()
                                         .name("complete")
                                         .data(writeJson(traceInfo)));
@@ -186,6 +198,7 @@ public class ChatController {
                         exception.getMessage(),
                         exception
                 );
+                chatMetricsRecorder.recordRequest(routeDecision.path(), true, false, elapsedMillis(startNanos));
                 try {
                     emitter.send(SseEmitter.event()
                             .name("error")
@@ -217,6 +230,12 @@ public class ChatController {
                     .orElse("");
         }
         return "";
+    }
+
+    private void recordToolMetric(RouteDecision routeDecision) {
+        if (routeDecision != null && routeDecision.toolUsed()) {
+            toolMetricsRecorder.recordInvocation(routeDecision.toolName(), true);
+        }
     }
 
     private void logRouteDecision(String eventName, String requestId, String sessionId, RouteDecision routeDecision) {

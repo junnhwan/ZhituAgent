@@ -10,6 +10,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
         AppProperties.class,
         LlmProperties.class,
         EmbeddingProperties.class,
+        RagProperties.class,
+        RerankProperties.class,
         PgVectorProperties.class,
         InfrastructureProperties.class
 })

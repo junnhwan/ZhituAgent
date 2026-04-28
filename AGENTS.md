@@ -21,7 +21,8 @@
   - 会话管理
   - SSE 对话
   - ToolUse
-- 混合检索、深记忆、可观测性、评估体系放到后续阶段
+- 混合检索、可观测性、评估体系已经在第二阶段完成第一版
+- 深记忆、更强的上下文策略、进一步的检索增强继续放到后续阶段
 
 ## 交付约束
 
@@ -59,7 +60,7 @@
 
 - 对话模型走 OpenAI 兼容接口：`https://wzw.pp.ua/v1`
 - Embedding 接口：`https://router.tumuer.me/v1/embeddings`
-- Rerank 接口：`https://router.tumuer.me/rerank`
+- Rerank 接口：`https://router.tumuer.me/v1/rerank`
 - 实际 key 只保存在 `.env`
 
 ## 如果后续还有别的 Agent 接手
@@ -76,9 +77,13 @@
   - Redis 真实链路已完成首轮联调
   - pgvector + dense retrieval 真实链路已完成首轮联调
   - 第一阶段收口提交为：`f5b66c3 feat: complete phase-one backend baseline and tracing`
-  - 当前下一步重点已转向第二阶段优化：
+  - 第二阶段 `Task 1` 到 `Task 4` 的第一版也已完成：
     - 评估基线运行器
-    - rerank
-    - hybrid retrieval
-    - Prometheus 指标
-    - Redis 记忆并发保护
+    - dense recall -> rerank
+    - hybrid retrieval + 中文优化切分
+    - Prometheus 指标 + Redis 记忆并发保护
+  - 当前下一步重点已转向第二阶段后的深化优化：
+    - 用真实 LLM 跑 baseline / A-B 评估
+    - 继续增强 hybrid retrieval 与检索质量对比
+    - 深化记忆机制与上下文压缩策略
+    - 做更完整的指标看板与效果沉淀
