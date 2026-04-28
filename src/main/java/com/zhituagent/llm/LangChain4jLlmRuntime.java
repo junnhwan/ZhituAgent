@@ -67,6 +67,27 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                         latencyMs
                 );
                 return answer;
+            } catch (IllegalArgumentException exception) {
+                if (isNullContentResponse(exception)) {
+                    String answer = generateByStreamingFallback(systemPrompt, messages);
+                    long latencyMs = elapsedMillis(startNanos);
+                    aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
+                    log.warn(
+                            "模型同步返回空内容，已回退到流式聚合 llm.generate.stream_fallback model={} messageCount={} message={}",
+                            properties.getModelName(),
+                            messages.size(),
+                            exception.getMessage()
+                    );
+                    log.info(
+                            "模型调用完成 llm.generate.completed provider=openai-compatible-stream-fallback messageCount={} model={} latencyMs={}",
+                            messages.size(),
+                            properties.getModelName(),
+                            latencyMs
+                    );
+                    return answer;
+                }
+                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", false, elapsedMillis(startNanos));
+                throw exception;
             } catch (RuntimeException exception) {
                 aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", false, elapsedMillis(startNanos));
                 throw exception;
@@ -238,6 +259,44 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
         return List.copyOf(chatMessages);
     }
 
+    private String generateByStreamingFallback(String systemPrompt, List<String> messages) {
+        CountDownLatch completionLatch = new CountDownLatch(1);
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+        AtomicBoolean emittedPartialToken = new AtomicBoolean(false);
+        StringBuilder answerBuilder = new StringBuilder();
+
+        getStreamingChatModel().chat(toChatMessages(systemPrompt, messages), new StreamingChatResponseHandler() {
+            @Override
+            public void onPartialResponse(String partialResponse) {
+                if (partialResponse != null && !partialResponse.isBlank()) {
+                    emittedPartialToken.set(true);
+                    answerBuilder.append(partialResponse);
+                }
+            }
+
+            @Override
+            public void onCompleteResponse(ChatResponse chatResponse) {
+                if (!emittedPartialToken.get()
+                        && chatResponse != null
+                        && chatResponse.aiMessage() != null
+                        && chatResponse.aiMessage().text() != null
+                        && !chatResponse.aiMessage().text().isBlank()) {
+                    answerBuilder.append(chatResponse.aiMessage().text());
+                }
+                completionLatch.countDown();
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                errorRef.set(error);
+                completionLatch.countDown();
+            }
+        });
+
+        awaitStreamingCompletion(completionLatch, errorRef);
+        return answerBuilder.toString();
+    }
+
     private void awaitStreamingCompletion(CountDownLatch completionLatch, AtomicReference<Throwable> errorRef) {
         try {
             boolean completed = completionLatch.await(STREAM_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -258,6 +317,12 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
 
     private boolean isNotBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private boolean isNullContentResponse(IllegalArgumentException exception) {
+        return exception != null
+                && exception.getMessage() != null
+                && exception.getMessage().contains("text cannot be null");
     }
 
     private long elapsedMillis(long startNanos) {

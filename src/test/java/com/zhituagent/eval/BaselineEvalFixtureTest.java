@@ -26,12 +26,14 @@ class BaselineEvalFixtureTest {
                     .filter(line -> !line.isBlank())
                     .toList();
 
-            assertThat(lines).hasSizeGreaterThanOrEqualTo(4);
+            assertThat(lines).hasSizeGreaterThanOrEqualTo(6);
             assertThat(lines).allSatisfy(this::assertValidCase);
             assertThat(lines).anySatisfy(line -> assertThat(caseType(line)).isEqualTo("direct-answer"));
             assertThat(lines).anySatisfy(line -> assertThat(caseType(line)).isEqualTo("rag-answer"));
             assertThat(lines).anySatisfy(line -> assertThat(caseType(line)).isEqualTo("tool-answer"));
             assertThat(lines).anySatisfy(line -> assertThat(caseType(line)).isEqualTo("long-context"));
+            assertThat(lines).anySatisfy(line -> assertThat(caseId(line)).isEqualTo("rag-rerank-001"));
+            assertThat(lines).anySatisfy(line -> assertThat(caseId(line)).isEqualTo("rag-hybrid-001"));
         }
     }
 
@@ -62,6 +64,34 @@ class BaselineEvalFixtureTest {
                     assertThat(historyTurn.path("assistant").asText()).isNotBlank();
                 });
             }
+
+            if (node.has("modeExpectations")) {
+                assertThat(node.path("modeExpectations").isObject()).isTrue();
+                node.path("modeExpectations").properties().forEach(modeEntry -> {
+                    JsonNode modeExpectation = modeEntry.getValue();
+                    assertThat(modeEntry.getKey()).isNotBlank();
+                    if (modeExpectation.has("expectedPath")) {
+                        assertThat(modeExpectation.path("expectedPath").asText()).isNotBlank();
+                    }
+                    if (modeExpectation.has("expectedRetrievalHit")) {
+                        assertThat(modeExpectation.path("expectedRetrievalHit").isBoolean()).isTrue();
+                    }
+                    if (modeExpectation.has("expectedToolUsed")) {
+                        assertThat(modeExpectation.path("expectedToolUsed").isBoolean()).isTrue();
+                    }
+                    if (modeExpectation.has("expectedTopSource")) {
+                        assertThat(modeExpectation.path("expectedTopSource").asText()).isNotBlank();
+                    }
+                });
+            }
+        } catch (IOException exception) {
+            throw new AssertionError("Invalid JSONL line: " + line, exception);
+        }
+    }
+
+    private String caseId(String line) {
+        try {
+            return objectMapper.readTree(line).path("caseId").asText();
         } catch (IOException exception) {
             throw new AssertionError("Invalid JSONL line: " + line, exception);
         }

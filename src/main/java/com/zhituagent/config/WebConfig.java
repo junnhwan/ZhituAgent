@@ -13,7 +13,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
         RagProperties.class,
         RerankProperties.class,
         PgVectorProperties.class,
-        InfrastructureProperties.class
+        InfrastructureProperties.class,
+        EvalProperties.class
 })
 public class WebConfig implements WebMvcConfigurer {
 

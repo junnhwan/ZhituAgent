@@ -61,6 +61,31 @@ class LangChain4jLlmRuntimeTest {
     }
 
     @Test
+    void shouldFallbackToStreamingWhenChatCompletionContentIsNull() throws Exception {
+        List<CapturedRequest> requests = new CopyOnWriteArrayList<>();
+        startServer(requests);
+
+        LlmProperties properties = new LlmProperties();
+        properties.setMockMode(false);
+        properties.setBaseUrl("http://localhost:" + server.getAddress().getPort() + "/v1");
+        properties.setApiKey("test-chat-key");
+        properties.setModelName("demo-chat-model");
+
+        LangChain4jLlmRuntime runtime = new LangChain4jLlmRuntime(properties);
+
+        String answer = runtime.generate(
+                "你是测试助手",
+                List.of("USER: 请走空内容回退流程"),
+                Map.of("requestId", "req_fallback_1")
+        );
+
+        assertThat(answer).isEqualTo("流式回答");
+        assertThat(requests).hasSize(2);
+        assertThat(requests.getFirst().body()).doesNotContain("\"stream\":true");
+        assertThat(requests.getLast().body()).contains("\"stream\" : true");
+    }
+
+    @Test
     void shouldStreamTokensFromConfiguredOpenAiCompatibleEndpoint() throws Exception {
         List<CapturedRequest> requests = new CopyOnWriteArrayList<>();
         startServer(requests);
@@ -116,7 +141,7 @@ class LangChain4jLlmRuntimeTest {
                 body
         ));
 
-        if (body.contains("\"stream\":true")) {
+        if (body.contains("\"stream\":true") || body.contains("\"stream\" : true")) {
             String response = """
                     data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1714185600,"model":"demo-chat-model","choices":[{"index":0,"delta":{"role":"assistant","content":"流式"},"finish_reason":null}]}
 
@@ -128,6 +153,39 @@ class LangChain4jLlmRuntimeTest {
 
                     """;
             exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(response.getBytes(StandardCharsets.UTF_8));
+            }
+            return;
+        }
+
+        if (body.contains("空内容回退流程")) {
+            String response = """
+                    {
+                      "id": "chatcmpl-null",
+                      "object": "chat.completion",
+                      "created": 1714185600,
+                      "model": "demo-chat-model",
+                      "choices": [
+                        {
+                          "index": 0,
+                          "message": {
+                            "role": "assistant",
+                            "content": null
+                          },
+                          "finish_reason": "stop"
+                        }
+                      ],
+                      "usage": {
+                        "prompt_tokens": 12,
+                        "completion_tokens": 0,
+                        "total_tokens": 12
+                      }
+                    }
+                    """;
+
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
             try (OutputStream outputStream = exchange.getResponseBody()) {
                 outputStream.write(response.getBytes(StandardCharsets.UTF_8));

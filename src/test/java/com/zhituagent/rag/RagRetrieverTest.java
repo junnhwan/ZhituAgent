@@ -139,6 +139,55 @@ class RagRetrieverTest {
         assertThat(result.snippets().getFirst().rerankScore()).isEqualTo(0.98);
     }
 
+    @Test
+    void shouldApplyRerankCalibrationWhenStructuredAnswerIsMoreSpecific() {
+        KnowledgeIngestService ingestService = new KnowledgeIngestService(new DocumentSplitter()) {
+            @Override
+            public List<KnowledgeSnippet> search(String query, int limit) {
+                return List.of(
+                        new KnowledgeSnippet(
+                                "phase-one-vague",
+                                "chunk-1",
+                                0.95,
+                                "Q: 第一版六项能力先做什么？\nA: 第一版先把整体主链跑起来，先做基础能力，后面再继续细化。"
+                        ),
+                        new KnowledgeSnippet(
+                                "phase-one-precise",
+                                "chunk-2",
+                                0.89,
+                                "Q: 第一版优先六项能力是什么？\nA: 第一版优先 Context、Memory、RAG、Session、SSE、ToolUse 六项能力。"
+                        )
+                );
+            }
+        };
+
+        RerankClient rerankClient = (query, candidates, topN) -> new RerankClient.RerankResponse(
+                "Qwen/Qwen3-Reranker-8B",
+                List.of(
+                        new RerankClient.RerankResult(0, 0.999741),
+                        new RerankClient.RerankResult(1, 0.998683)
+                )
+        );
+
+        RagRetriever retriever = new RagRetriever(
+                ingestService,
+                new QueryPreprocessor(),
+                new LexicalRetriever(ingestService),
+                new HybridRetrievalMerger(),
+                rerankClient,
+                ragProperties(false, 10),
+                rerankProperties(true, 20, 5, "https://router.tumuer.me/v1/rerank", "demo-key", "Qwen/Qwen3-Reranker-8B")
+        );
+
+        RagRetrievalResult result = retriever.retrieveDetailed("第一版六项能力先做什么？", 2);
+
+        assertThat(result.retrievalMode()).isEqualTo("dense-rerank");
+        assertThat(result.snippets()).hasSize(2);
+        assertThat(result.snippets().getFirst().source()).isEqualTo("phase-one-precise");
+        assertThat(result.snippets().getFirst().rerankScore()).isEqualTo(0.998683);
+        assertThat(result.snippets().getFirst().score()).isGreaterThan(result.snippets().get(1).score());
+    }
+
     private RerankProperties rerankProperties(boolean enabled,
                                               int recallTopK,
                                               int finalTopK,

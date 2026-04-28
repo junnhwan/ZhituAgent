@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.api.dto.ChatRequest;
 import com.zhituagent.api.dto.ChatResponse;
 import com.zhituagent.api.dto.TraceInfo;
+import com.zhituagent.chat.ChatService;
 import com.zhituagent.config.AppProperties;
 import com.zhituagent.context.ContextBundle;
 import com.zhituagent.context.ContextManager;
@@ -40,6 +41,7 @@ public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
+    private final ChatService chatService;
     private final LlmRuntime llmRuntime;
     private final SessionService sessionService;
     private final MemoryService memoryService;
@@ -51,7 +53,8 @@ public class ChatController {
     private final ObjectMapper objectMapper;
     private final String systemPrompt;
 
-    public ChatController(LlmRuntime llmRuntime,
+    public ChatController(ChatService chatService,
+                          LlmRuntime llmRuntime,
                           SessionService sessionService,
                           MemoryService memoryService,
                           ContextManager contextManager,
@@ -62,6 +65,7 @@ public class ChatController {
                           ObjectMapper objectMapper,
                           AppProperties appProperties,
                           ResourceLoader resourceLoader) throws IOException {
+        this.chatService = chatService;
         this.llmRuntime = llmRuntime;
         this.sessionService = sessionService;
         this.memoryService = memoryService;
@@ -77,47 +81,14 @@ public class ChatController {
 
     @PostMapping(path = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
     public ChatResponse chat(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest) {
-        long startNanos = System.nanoTime();
         String requestId = requestIdOf(servletRequest);
-        sessionService.ensureSession(request.sessionId(), request.userId());
-        sessionService.appendMessage(request.sessionId(), request.userId(), "user", request.message());
-        RouteDecision routeDecision = agentOrchestrator.decide(request.message());
-        recordToolMetric(routeDecision);
-        logRouteDecision("chat.route.selected", requestId, request.sessionId(), routeDecision);
-        ContextBundle contextBundle = contextManager.build(
-                systemPrompt,
-                memoryService.snapshot(request.sessionId()),
-                request.message(),
-                buildEvidenceBlock(routeDecision)
-        );
-
-        String answer = llmRuntime.generate(
-                systemPrompt,
-                contextBundle.modelMessages(),
-                request.metadata() == null ? Map.of() : request.metadata()
-        );
-
-        sessionService.appendMessage(request.sessionId(), request.userId(), "assistant", answer);
-        long latencyMs = elapsedMillis(startNanos);
-        TraceInfo traceInfo = chatTraceFactory.create(
-                routeDecision,
-                requestId,
-                latencyMs,
-                contextBundle.modelMessages(),
-                answer
-        );
-        log.info(
-                "对话完成 chat.completed sessionId={} path={} retrievalHit={} toolUsed={} requestId={} answerLength={} latencyMs={}",
+        return chatService.chat(
                 request.sessionId(),
-                routeDecision.path(),
-                routeDecision.retrievalHit(),
-                routeDecision.toolUsed(),
+                request.userId(),
+                request.message(),
                 requestId,
-                answer.length(),
-                latencyMs
+                request.metadata()
         );
-        chatMetricsRecorder.recordRequest(routeDecision.path(), false, true, latencyMs);
-        return new ChatResponse(request.sessionId(), answer, traceInfo);
     }
 
     @PostMapping(path = "/streamChat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

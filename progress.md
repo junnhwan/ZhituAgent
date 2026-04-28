@@ -20,8 +20,9 @@
 - 已完成：第二阶段 `Task 2` 的 query preprocessing 与 `dense recall -> rerank` 第一版已落地
 - 已完成：第二阶段 `Task 3` 的 hybrid retrieval 与中文优化切分第一版已落地
 - 已完成：第二阶段 `Task 4` 的 Prometheus 指标与 Redis 记忆并发保护第一版已落地
+- 已完成：深化优化阶段 `Task 1` 的运行时评估 runner、多模式对比报告、检索 source 隔离第一版已落地
 - 已完成：`/actuator/health` 与 `/actuator/prometheus` 已完成测试覆盖
-- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `32` 个测试全部通过
+- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `33` 个测试全部通过
 
 ## 当前进展
 
@@ -32,6 +33,7 @@
 - 已完成：接口文档 `docs/2026-04-27-zhitu-agent-java-api.md`
 - 已完成：实现计划 `docs/2026-04-27-zhitu-agent-java-implementation-plan.md`
 - 已完成：第二阶段计划文档 `docs/2026-04-28-zhitu-agent-java-phase-two-plan.md`
+- 已完成：后续优化计划文档 `docs/2026-04-28-zhitu-agent-java-optimization-plan.md`
 - 已完成：文档术语已统一切到 `Task 1/2/3/4`，并明确当前仓库以后端链路为主
 
 ### 第二阶段 Task 1：评估运行器与 trace 扩展
@@ -234,6 +236,43 @@
 - 已新增 `ObservabilityEndpointTest`
 - 已增强 `MemoryServiceTest`
 - `.\mvnw.cmd "-Dtest=ObservabilityEndpointTest,MemoryServiceTest" test` 已通过
+- `.\mvnw.cmd test` 已通过
+
+说明：
+
+### 深化优化阶段 Task 1：运行时评估与多模式对比
+
+状态：已完成第一版
+
+已完成内容：
+
+- 已将评估运行器迁入主代码：
+  - `src/main/java/com/zhituagent/eval/BaselineEvalRunner.java`
+  - `src/main/java/com/zhituagent/eval/BaselineEvalCase.java`
+  - `src/main/java/com/zhituagent/eval/BaselineEvalResult.java`
+  - `src/main/java/com/zhituagent/eval/BaselineEvalComparisonReport.java`
+- 已新增评估配置：
+  - `src/main/java/com/zhituagent/config/EvalProperties.java`
+- 已新增启动期评估入口：
+  - `src/main/java/com/zhituagent/eval/EvalApplicationRunner.java`
+- 已将同步对话主链抽出为可复用服务：
+  - `src/main/java/com/zhituagent/chat/ChatService.java`
+- 已补齐评估链路下的检索运行选项：
+  - `src/main/java/com/zhituagent/rag/RetrievalMode.java`
+  - `src/main/java/com/zhituagent/rag/RetrievalRequestOptions.java`
+- 已让 `AgentOrchestrator` 与 `RagRetriever` 支持：
+  - `dense`
+  - `dense-rerank`
+  - `hybrid-rerank`
+  的模式切换
+- 已为 eval case 增加检索 source 白名单隔离，避免直答 / 工具 / 长上下文 case 被其他知识污染
+- 已补齐运行时 fixture：
+  - `src/main/resources/eval/baseline-chat-cases.jsonl`
+- 已扩充 `rag-001` 的知识样本，使 rerank 对比稳定产生 2 个候选
+
+已完成验证：
+
+- `.\mvnw.cmd -Dtest=BaselineEvalRunnerTest test` 已通过
 - `.\mvnw.cmd test` 已通过
 
 说明：
@@ -547,7 +586,175 @@ pgvector 手工联调结果：
 
 ## 下一步
 
-1. 用真实 LLM 跑 `BaselineEvalRunner`，补一版 dense / dense-rerank / hybrid-rerank 的可量化对比数据
-2. 继续扩充评估样例，特别是能体现 rerank 与 hybrid 收益的中文查询 case
-3. 深化记忆机制与上下文压缩策略，而不是只停留在当前最小 summary + recent messages
-4. 进一步补齐指标看板、错误分类与长期可观测性沉淀
+当前第一阶段与第二阶段第一版都已完成，后续主线已切到“深化优化阶段”。详细路线请看：
+
+- `docs/2026-04-28-zhitu-agent-java-optimization-plan.md`
+
+建议按新的 `Task 1` 到 `Task 4` 推进：
+
+1. 用真实 LLM、真实 embedding、真实 rerank、真实 pgvector 跑 `BaselineEvalRunner`，产出 dense / dense-rerank / hybrid-rerank 的正式对比报告
+2. 继续调优 hybrid retrieval、query preprocessing、topK 与阈值，稳定检索收益
+3. 深化记忆机制与上下文压缩策略，从 `summary + recent messages` 升级为更清晰的短期 / 长期记忆分层
+4. 补齐指标看板、错误分类、评估报告模板与可写入简历的量化沉淀
+
+## 2026-04-28 晚间补充：深化优化阶段 Task 1 进展
+
+状态：已完成第一轮“真实评估 + 区分型样例扩充”，但也暴露出真实 rerank 仍需继续优化
+
+本轮新增实现：
+
+- 已扩充 baseline eval case：
+  - `rag-rerank-001`
+  - `rag-hybrid-001`
+- 已增强 `BaselineEvalRunner`：
+  - 默认模式不再只写死为 `default`
+  - 当运行默认检索模式时，会按真实 `retrievalMode` 解析 `modeExpectations`
+  - 评估报告会回填更真实的 `mode`
+- 已补强测试：
+  - `BaselineEvalRunnerTest`
+  - `BaselineEvalFixtureTest`
+
+本轮已完成验证：
+
+- `.\mvnw.cmd "-Dtest=BaselineEvalFixtureTest,BaselineEvalRunnerTest" test` 通过
+- `.\mvnw.cmd test` 通过
+- 当前全量测试结果：
+  - `34` 个测试全部通过
+
+真实评估运行情况：
+
+- 第一次尝试使用当前 `.env` 中的对话模型 `gpt-5.4`
+  - 运行到中途命中上游 `model_cooldown`
+  - 未能完整产出报告
+- 第二次改用同网关可用模型 `gpt-5.4-mini` 跑通整套真实评估
+  - 评估报告：
+    - `target/eval-reports/baseline-comparison-20260428-185440.json`
+
+本轮真实报告关键结论：
+
+- `dense`
+  - `passedCases = 6/6`
+  - `topSourceExpectationHitRate = 1.0`
+  - `averageLatencyMs = 10337.5`
+- `dense-rerank`
+  - `passedCases = 4/6`
+  - `topSourceExpectationHitRate = 0.0`
+  - `averageLatencyMs = 11054.0`
+- `hybrid-rerank`
+  - `passedCases = 5/6`
+  - `topSourceExpectationHitRate = 0.5`
+  - `averageLatencyMs = 12771.83`
+
+区分度验证结果：
+
+- `rag-hybrid-001`
+  - `dense` 命中 `phase-one-vague-a`
+  - `hybrid-rerank` 命中 `phase-one-keyword-target`
+  - 说明新增的“关键词 + lexical 信号”样例在真实链路下也能拉开模式差异
+- `rag-rerank-001`
+  - 真实 `dense-rerank` / `hybrid-rerank` 并没有像 mock stub 那样翻到 `phase-one-precise`
+  - 真实报告里仍然更偏向 `phase-one-vague`
+  - 说明当前 rerank 提升并不稳定，后续不能只看 mock 测试结论
+
+与旧报告对比：
+
+- 旧报告：
+  - `target/eval-reports/baseline-comparison-20260428-181156.json`
+  - 只有 `4` 条 case，模式区分度不足
+- 新报告：
+  - 已扩成 `6` 条 case
+  - 已能真实观察到 hybrid 的收益点
+  - 同时也真实暴露了 rerank 质量缺口
+
+当前判断：
+
+- 深化优化阶段 `Task 1` 的“真实评估跑通 + 结果更有区分度”已经完成第一版
+- 但这轮结果同时证明：
+  - `hybrid retrieval` 已经有真实收益信号
+  - `rerank` 的真实收益还不稳定
+  - 下一步应优先转入检索质量深化，而不是只继续堆更多 case
+
+## 2026-04-28 深夜补充：深化优化阶段 Task 2 第一轮
+
+状态：已完成第一轮“rerank 结果校准 + 真实报告回归验证”
+
+本轮新增实现：
+
+- 已新增 `RerankResultCalibrator`
+  - 文件：
+    - `src/main/java/com/zhituagent/rag/RerankResultCalibrator.java`
+- 已将 rerank 校准接入 `RagRetriever`
+  - 目标不是替代上游 rerank，而是在分数非常接近时补一层本地校准
+  - 当前校准信号包括：
+    - 枚举型回答结构
+    - 英文 / acronym 查询词覆盖
+    - “明确 / 包含 / 列出”类显式表达
+- 已同步调整 baseline eval 期望：
+  - `rag-hybrid-001` 在 `dense-rerank` 下现在也以 `phase-one-keyword-target` 为合理期望
+
+本轮新增测试：
+
+- `src/test/java/com/zhituagent/rag/RerankResultCalibratorTest.java`
+- `RagRetrieverTest` 新增 structured-answer rerank calibration 用例
+
+本轮已完成验证：
+
+- `.\mvnw.cmd "-Dtest=RagRetrieverTest,RerankResultCalibratorTest,BaselineEvalFixtureTest,BaselineEvalRunnerTest" test` 通过
+- `.\mvnw.cmd test` 通过
+- 当前全量测试结果已更新为：
+  - `37` 个测试全部通过
+
+真实评估运行情况：
+
+- 再次尝试 `gpt-5.4-mini`
+  - 中途仍然命中上游 `model_cooldown`
+  - 未能完成整轮
+- 改用同网关可用模型 `gpt-5.2`
+  - 成功完成整轮真实评估
+  - 新报告：
+    - `target/eval-reports/baseline-comparison-20260428-192645.json`
+
+优化前后核心对比：
+
+- 旧报告：
+  - `target/eval-reports/baseline-comparison-20260428-185440.json`
+  - `dense-rerank`
+    - `passedCases = 4/6`
+    - `topSourceExpectationHitRate = 0.0`
+  - `hybrid-rerank`
+    - `passedCases = 5/6`
+    - `topSourceExpectationHitRate = 0.5`
+- 新报告：
+  - `target/eval-reports/baseline-comparison-20260428-192645.json`
+  - `dense-rerank`
+    - `passedCases = 6/6`
+    - `topSourceExpectationHitRate = 1.0`
+  - `hybrid-rerank`
+    - `passedCases = 6/6`
+    - `topSourceExpectationHitRate = 1.0`
+
+关键 case 结果：
+
+- `rag-rerank-001`
+  - 优化前：
+    - `dense-rerank` / `hybrid-rerank` 都更偏 `phase-one-vague`
+  - 优化后：
+    - `dense-rerank` / `hybrid-rerank` 都稳定翻到 `phase-one-precise`
+- `rag-hybrid-001`
+  - 优化前：
+    - `dense-rerank` 已能翻到 `phase-one-keyword-target`，但当时 fixture 期望还没同步
+  - 优化后：
+    - `dense-rerank` / `hybrid-rerank` 都稳定命中 `phase-one-keyword-target`
+    - `dense` 仍保持 `phase-one-vague-a`
+
+当前判断：
+
+- 深化优化阶段 `Task 2` 的第一轮已经拿到真实、可量化的收益
+- 这轮最直接可讲的数据是：
+  - `dense-rerank` 的 `topSourceExpectationHitRate` 从 `0.0` 提升到 `1.0`
+  - `hybrid-rerank` 的 `topSourceExpectationHitRate` 从 `0.5` 提升到 `1.0`
+  - 两个 rerank 模式的 `passedCases` 都提升到 `6/6`
+- 下一步更值得做的不是继续硬堆启发式，而是：
+  - 继续扩充真实评估 case
+  - 观察校准规则是否会在更多中文查询上带来副作用
+  - 进一步处理模型网关 `cooldown` 对评估稳定性的影响

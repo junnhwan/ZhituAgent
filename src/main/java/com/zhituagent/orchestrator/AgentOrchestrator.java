@@ -3,6 +3,8 @@ package com.zhituagent.orchestrator;
 import com.zhituagent.rag.KnowledgeSnippet;
 import com.zhituagent.rag.RagRetrievalResult;
 import com.zhituagent.rag.RagRetriever;
+import com.zhituagent.rag.RetrievalMode;
+import com.zhituagent.rag.RetrievalRequestOptions;
 import com.zhituagent.tool.ToolRegistry;
 import com.zhituagent.tool.ToolResult;
 import org.springframework.stereotype.Component;
@@ -22,6 +24,14 @@ public class AgentOrchestrator {
     }
 
     public RouteDecision decide(String userMessage) {
+        return decide(userMessage, RetrievalRequestOptions.defaults());
+    }
+
+    public RouteDecision decide(String userMessage, RetrievalMode retrievalMode) {
+        return decide(userMessage, RetrievalRequestOptions.withMode(retrievalMode));
+    }
+
+    public RouteDecision decide(String userMessage, RetrievalRequestOptions retrievalOptions) {
         if (looksLikeTimeQuestion(userMessage) && toolRegistry.find("time").isPresent()) {
             ToolResult toolResult = toolRegistry.find("time")
                     .orElseThrow()
@@ -29,7 +39,7 @@ public class AgentOrchestrator {
             return RouteDecision.tool("time", toolResult);
         }
 
-        RagRetrievalResult retrievalResult = ragRetriever.retrieveDetailed(userMessage, 3);
+        RagRetrievalResult retrievalResult = ragRetriever.retrieveDetailed(userMessage, 3, retrievalOptions);
         if (!retrievalResult.snippets().isEmpty()) {
             return RouteDecision.retrieval(retrievalResult);
         }

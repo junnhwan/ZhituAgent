@@ -16,6 +16,7 @@
 - 已支持可切换的 Redis 会话/记忆存储
 - 已支持可切换的 pgvector dense RAG
 - 已补第一版 trace 字段与 baseline eval fixture
+- 已支持运行时 baseline eval runner 与 dense / dense-rerank / hybrid-rerank 多模式对比报告
 - 第二阶段计划文档已补入 `docs/2026-04-28-zhitu-agent-java-phase-two-plan.md`
 
 ## 运行要求
@@ -48,6 +49,23 @@
 - `POST /api/chat`
 - `POST /api/streamChat`
 - `POST /api/knowledge`
+
+## 评估运行
+
+当前已支持在应用启动时直接跑 baseline eval，并输出多模式对比报告。
+
+示例命令：
+
+```powershell
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--zhitu.eval.enabled=true --zhitu.eval.modes=dense,dense-rerank,hybrid-rerank --zhitu.eval.report-dir=target/eval-reports --zhitu.eval.exit-after-run=true"
+```
+
+说明：
+
+- 默认 fixture：`src/main/resources/eval/baseline-chat-cases.jsonl`
+- 默认模式：`dense`、`dense-rerank`、`hybrid-rerank`
+- 报告默认写到 `target/eval-reports/`
+- 评估主入口位于 `src/main/java/com/zhituagent/eval/`
 
 ## 配置方式
 
@@ -83,6 +101,7 @@ spring:
 - `docs/2026-04-27-zhitu-agent-java-api.md`
 - `docs/2026-04-27-zhitu-agent-java-implementation-plan.md`
 - `docs/2026-04-28-zhitu-agent-java-phase-two-plan.md`
+- `docs/2026-04-28-zhitu-agent-java-optimization-plan.md`
 
 ## 当前观测能力
 

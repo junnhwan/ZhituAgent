@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 
 @Component
 public class RagRetriever {
@@ -27,6 +28,7 @@ public class RagRetriever {
     private final RagProperties ragProperties;
     private final RerankProperties rerankProperties;
     private final RagMetricsRecorder ragMetricsRecorder;
+    private final RerankResultCalibrator rerankResultCalibrator;
 
     @Autowired
     public RagRetriever(KnowledgeIngestService knowledgeIngestService,
@@ -45,6 +47,7 @@ public class RagRetriever {
         this.ragProperties = ragProperties;
         this.rerankProperties = rerankProperties;
         this.ragMetricsRecorder = ragMetricsRecorder;
+        this.rerankResultCalibrator = new RerankResultCalibrator();
     }
 
     public RagRetriever(KnowledgeIngestService knowledgeIngestService,
@@ -83,19 +86,36 @@ public class RagRetriever {
     }
 
     public RagRetrievalResult retrieveDetailed(String query, int limit) {
+        return retrieveDetailed(query, limit, RetrievalRequestOptions.defaults());
+    }
+
+    public RagRetrievalResult retrieveDetailed(String query, int limit, RetrievalMode retrievalMode) {
+        return retrieveDetailed(query, limit, RetrievalRequestOptions.withMode(retrievalMode));
+    }
+
+    public RagRetrievalResult retrieveDetailed(String query, int limit, RetrievalRequestOptions retrievalOptions) {
         long startNanos = System.nanoTime();
+        RetrievalRequestOptions safeOptions = retrievalOptions == null ? RetrievalRequestOptions.defaults() : retrievalOptions;
+        RetrievalMode safeMode = safeOptions.mode();
         String processedQuery = queryPreprocessor.preprocess(query);
         int finalLimit = resolveFinalLimit(limit);
-        int recallLimit = shouldAttemptRerank()
+        boolean rerankEnabled = safeMode.resolveRerank(isRerankReady());
+        boolean hybridEnabled = safeMode.resolveHybrid(ragProperties != null && ragProperties.isHybridEnabled());
+        int recallLimit = rerankEnabled
                 ? Math.max(finalLimit, Math.max(1, rerankProperties.getRecallTopK()))
                 : finalLimit;
 
-        List<KnowledgeSnippet> denseSnippets = knowledgeIngestService.search(processedQuery, recallLimit);
-        List<KnowledgeSnippet> lexicalSnippets = shouldUseHybrid()
-                ? lexicalRetriever.retrieve(processedQuery, Math.max(1, ragProperties.getLexicalTopK()))
+        List<KnowledgeSnippet> denseSnippets = filterByAllowedSources(
+                knowledgeIngestService.search(processedQuery, recallLimit),
+                safeOptions
+        );
+        List<KnowledgeSnippet> lexicalSnippets = hybridEnabled
+                ? filterByAllowedSources(
+                lexicalRetriever.retrieve(processedQuery, Math.max(1, ragProperties.getLexicalTopK())),
+                safeOptions
+        )
                 : List.of();
-        boolean hybridUsed = shouldUseHybrid() && !lexicalSnippets.isEmpty();
-        List<RetrievalCandidate> candidates = hybridUsed
+        List<RetrievalCandidate> candidates = hybridEnabled
                 ? hybridRetrievalMerger.merge(denseSnippets, lexicalSnippets, recallLimit)
                 : denseSnippets.stream()
                 .map(snippet -> new RetrievalCandidate(
@@ -108,7 +128,7 @@ public class RagRetriever {
                 ))
                 .toList();
 
-        RagRetrievalResult result = tryRerank(processedQuery, finalLimit, candidates, hybridUsed);
+        RagRetrievalResult result = tryRerank(processedQuery, finalLimit, candidates, hybridEnabled, rerankEnabled);
         long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
         if (result.snippets().isEmpty()) {
             ragMetricsRecorder.recordRetrieval(result.retrievalMode(), false, latencyMs, candidates.size(), 0);
@@ -149,9 +169,10 @@ public class RagRetriever {
     private RagRetrievalResult tryRerank(String processedQuery,
                                          int finalLimit,
                                          List<RetrievalCandidate> candidates,
-                                         boolean hybridUsed) {
-        String baseMode = hybridUsed ? HYBRID_MODE : DENSE_MODE;
-        String rerankMode = hybridUsed ? HYBRID_RERANK_MODE : DENSE_RERANK_MODE;
+                                         boolean hybridEnabled,
+                                         boolean rerankEnabled) {
+        String baseMode = hybridEnabled ? HYBRID_MODE : DENSE_MODE;
+        String rerankMode = hybridEnabled ? HYBRID_RERANK_MODE : DENSE_RERANK_MODE;
         if (candidates.isEmpty()) {
             return new RagRetrievalResult(List.of(), baseMode, 0, "", 0.0);
         }
@@ -160,17 +181,24 @@ public class RagRetriever {
                 .limit(finalLimit)
                 .map(this::toKnowledgeSnippet)
                 .toList();
-        if (!shouldAttemptRerank() || candidates.size() <= 1) {
+        if (!rerankEnabled || candidates.size() <= 1) {
             return new RagRetrievalResult(baseSnippets, baseMode, candidates.size(), "", 0.0);
         }
 
         try {
             ragMetricsRecorder.recordRerankAttempt(rerankProperties.getModelName(), true);
             RerankClient.RerankResponse rerankResponse = rerankClient.rerank(processedQuery, candidates, finalLimit);
-            List<KnowledgeSnippet> rerankedSnippets = rerankResponse.results().stream()
-                    .filter(result -> result.index() >= 0 && result.index() < candidates.size())
+            List<KnowledgeSnippet> rerankedSnippets = rerankResultCalibrator.calibrate(
+                            processedQuery,
+                            candidates,
+                            rerankResponse.results()
+                    ).stream()
                     .limit(finalLimit)
-                    .map(result -> toRerankedSnippet(candidates.get(result.index()), result.score()))
+                    .map(result -> toRerankedSnippet(
+                            candidates.get(result.index()),
+                            result.calibratedScore(),
+                            result.rawScore()
+                    ))
                     .toList();
 
             if (rerankedSnippets.isEmpty()) {
@@ -197,11 +225,13 @@ public class RagRetriever {
         }
     }
 
-    private KnowledgeSnippet toRerankedSnippet(RetrievalCandidate candidate, double rerankScore) {
+    private KnowledgeSnippet toRerankedSnippet(RetrievalCandidate candidate,
+                                               double calibratedScore,
+                                               double rerankScore) {
         return new KnowledgeSnippet(
                 candidate.source(),
                 candidate.chunkId(),
-                rerankScore,
+                calibratedScore,
                 candidate.content(),
                 candidate.denseScore(),
                 rerankScore
@@ -221,18 +251,30 @@ public class RagRetriever {
 
     private int resolveFinalLimit(int limit) {
         int safeLimit = Math.max(1, limit);
-        if (shouldAttemptRerank() && rerankProperties.getFinalTopK() > 0) {
+        if (isRerankReady() && rerankProperties.getFinalTopK() > 0) {
             return Math.min(safeLimit, rerankProperties.getFinalTopK());
         }
         return safeLimit;
     }
 
-    private boolean shouldAttemptRerank() {
-        return rerankClient != null && rerankProperties != null && rerankProperties.isReady();
+    private List<KnowledgeSnippet> filterByAllowedSources(List<KnowledgeSnippet> snippets, RetrievalRequestOptions options) {
+        if (snippets == null || snippets.isEmpty()) {
+            return List.of();
+        }
+        if (options == null || !options.hasSourceAllowlist()) {
+            return List.copyOf(snippets);
+        }
+        Set<String> allowedSources = options.sourceAllowlist();
+        if (allowedSources.isEmpty()) {
+            return List.of();
+        }
+        return snippets.stream()
+                .filter(snippet -> allowedSources.contains(snippet.source()))
+                .toList();
     }
 
-    private boolean shouldUseHybrid() {
-        return ragProperties != null && ragProperties.isHybridEnabled();
+    private boolean isRerankReady() {
+        return rerankClient != null && rerankProperties != null && rerankProperties.isReady();
     }
 
     private static RagProperties disabledRagProperties() {

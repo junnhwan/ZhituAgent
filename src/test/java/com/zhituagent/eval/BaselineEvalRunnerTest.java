@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.ZhituAgentApplication;
 import com.zhituagent.llm.LlmRuntime;
+import com.zhituagent.rag.RerankClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -11,25 +12,33 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
-import org.springframework.test.web.servlet.MockMvc;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(classes = {ZhituAgentApplication.class, BaselineEvalRunnerTest.StubConfig.class})
+@SpringBootTest(
+        classes = {ZhituAgentApplication.class, BaselineEvalRunnerTest.StubConfig.class},
+        properties = {
+                "zhitu.infrastructure.redis-enabled=false",
+                "zhitu.rerank.enabled=true",
+                "zhitu.rerank.url=https://router.tumuer.me/v1/rerank",
+                "zhitu.rerank.api-key=demo-key",
+                "zhitu.rerank.model-name=Qwen/Qwen3-Reranker-8B",
+                "zhitu.rag.hybrid-enabled=true"
+        }
+)
 @AutoConfigureMockMvc
 class BaselineEvalRunnerTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private BaselineEvalRunner baselineEvalRunner;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -65,19 +74,52 @@ class BaselineEvalRunnerTest {
                 }
             };
         }
+
+        @Bean
+        @Primary
+        RerankClient testRerankClient() {
+            return (query, candidates, topN) -> {
+                if (candidates.isEmpty()) {
+                    return new RerankClient.RerankResponse("Qwen/Qwen3-Reranker-8B", List.of());
+                }
+                int preferredIndex = IntStream.range(0, candidates.size())
+                        .filter(index -> shouldPreferCandidate(query, candidates.get(index).source()))
+                        .findFirst()
+                        .orElse(0);
+                return new RerankClient.RerankResponse(
+                        "Qwen/Qwen3-Reranker-8B",
+                        List.of(new RerankClient.RerankResult(preferredIndex, 0.97))
+                );
+            };
+        }
+
+        private boolean shouldPreferCandidate(String query, String source) {
+            if (query == null || source == null) {
+                return false;
+            }
+            String normalizedQuery = query.toLowerCase();
+            if (normalizedQuery.contains("sse") && normalizedQuery.contains("tooluse")) {
+                return "phase-one-keyword-target".equals(source);
+            }
+            if (query.contains("六项能力")) {
+                return "phase-one-precise".equals(source);
+            }
+            return false;
+        }
     }
 
     @Test
     void shouldRunBaselineFixtureAndWriteEvalReport() throws Exception {
         Path reportPath = Path.of("target", "eval-reports", "baseline-" + UUID.randomUUID() + ".json");
 
-        Object runner = instantiateRunner(mockMvc, objectMapper, reportPath);
-        Object report = invokeRun(runner);
+        Object report = baselineEvalRunner.runBaselineFixture(reportPath);
         JsonNode reportJson = objectMapper.valueToTree(report);
 
         assertThat(reportJson.path("totalCases").asInt()).isGreaterThanOrEqualTo(4);
         assertThat(reportJson.path("passedCases").asInt()).isEqualTo(reportJson.path("totalCases").asInt());
+        assertThat(reportJson.path("mode").asText()).isEqualTo("hybrid-rerank");
         assertThat(reportJson.path("routeAccuracy").asDouble()).isEqualTo(1.0);
+        assertThat(reportJson.path("topSourceExpectationHitRate").asDouble()).isGreaterThan(0.0);
         assertThat(reportJson.path("results").isArray()).isTrue();
         assertThat(reportJson.path("results")).hasSize(reportJson.path("totalCases").asInt());
         assertThat(reportJson.path("averageLatencyMs").asDouble()).isGreaterThanOrEqualTo(0.0);
@@ -104,15 +146,58 @@ class BaselineEvalRunnerTest {
         assertThat(writtenReport.path("results")).hasSize(reportJson.path("results").size());
     }
 
-    private Object instantiateRunner(MockMvc mockMvc, ObjectMapper objectMapper, Path reportPath) throws Exception {
-        Class<?> runnerClass = Class.forName("com.zhituagent.eval.BaselineEvalRunner");
-        Constructor<?> constructor = runnerClass.getDeclaredConstructor(MockMvc.class, ObjectMapper.class, Path.class);
-        return constructor.newInstance(mockMvc, objectMapper, reportPath);
-    }
+    @Test
+    void shouldRunModeComparisonFixtureAndWriteAggregatedReport() throws Exception {
+        Path reportPath = Path.of("target", "eval-reports", "comparison-" + UUID.randomUUID() + ".json");
 
-    private Object invokeRun(Object runner) throws Exception {
-        Method method = runner.getClass().getDeclaredMethod("runBaselineFixture");
-        return method.invoke(runner);
+        Object report = baselineEvalRunner.runModeComparisonFixture(
+                List.of("dense", "dense-rerank", "hybrid-rerank"),
+                reportPath
+        );
+        JsonNode reportJson = objectMapper.valueToTree(report);
+
+        assertThat(reportJson.path("fixtureName").asText()).isEqualTo("eval/baseline-chat-cases.jsonl");
+        assertThat(reportJson.path("modeReports")).hasSize(3);
+
+        JsonNode denseReport = findModeReport(reportJson, "dense");
+        assertThat(denseReport.path("totalCases").asInt()).isGreaterThanOrEqualTo(4);
+        assertThat(denseReport.path("passedCases").asInt()).isEqualTo(denseReport.path("totalCases").asInt());
+        assertThat(findCase(denseReport, "rag-001").path("retrievalMode").asText()).isEqualTo("dense");
+
+        JsonNode denseRerankReport = findModeReport(reportJson, "dense-rerank");
+        assertThat(denseRerankReport.path("passedCases").asInt()).isEqualTo(denseRerankReport.path("totalCases").asInt());
+        JsonNode denseRerankCase = findCase(denseRerankReport, "rag-001");
+        assertThat(denseRerankCase.path("retrievalMode").asText()).isEqualTo("dense-rerank");
+        assertThat(denseRerankCase.path("rerankModel").asText()).isEqualTo("Qwen/Qwen3-Reranker-8B");
+
+        JsonNode hybridRerankReport = findModeReport(reportJson, "hybrid-rerank");
+        assertThat(hybridRerankReport.path("passedCases").asInt()).isEqualTo(hybridRerankReport.path("totalCases").asInt());
+        JsonNode hybridRerankCase = findCase(hybridRerankReport, "rag-001");
+        assertThat(hybridRerankCase.path("retrievalMode").asText()).isEqualTo("hybrid-rerank");
+        assertThat(hybridRerankCase.path("actualRetrievalHit").asBoolean()).isTrue();
+
+        JsonNode rerankDenseCase = findCase(denseReport, "rag-rerank-001");
+        assertThat(rerankDenseCase.path("topSource").asText()).isEqualTo("phase-one-vague");
+
+        JsonNode rerankDenseRerankCase = findCase(denseRerankReport, "rag-rerank-001");
+        assertThat(rerankDenseRerankCase.path("topSource").asText()).isEqualTo("phase-one-precise");
+        assertThat(rerankDenseRerankCase.path("topSourceMatched").asBoolean()).isTrue();
+
+        JsonNode hybridDenseCase = findCase(denseReport, "rag-hybrid-001");
+        assertThat(hybridDenseCase.path("topSource").asText()).isEqualTo("phase-one-vague-a");
+        assertThat(hybridDenseCase.path("topSourceMatched").asBoolean()).isTrue();
+
+        JsonNode hybridDenseRerankCase = findCase(denseRerankReport, "rag-hybrid-001");
+        assertThat(hybridDenseRerankCase.path("topSource").asText()).isEqualTo("phase-one-keyword-target");
+        assertThat(hybridDenseRerankCase.path("topSourceMatched").asBoolean()).isTrue();
+
+        JsonNode hybridCase = findCase(hybridRerankReport, "rag-hybrid-001");
+        assertThat(hybridCase.path("topSource").asText()).isEqualTo("phase-one-keyword-target");
+        assertThat(hybridCase.path("topSourceMatched").asBoolean()).isTrue();
+
+        assertThat(reportPath).exists();
+        JsonNode writtenReport = objectMapper.readTree(Files.readString(reportPath));
+        assertThat(writtenReport.path("modeReports")).hasSize(3);
     }
 
     private JsonNode findCase(JsonNode reportJson, String caseId) {
@@ -128,5 +213,14 @@ class BaselineEvalRunnerTest {
                     return objectMapper.createObjectNode();
                 })
                 .orElseGet(objectMapper::createObjectNode);
+    }
+
+    private JsonNode findModeReport(JsonNode reportJson, String mode) {
+        for (JsonNode modeReport : reportJson.path("modeReports")) {
+            if (mode.equals(modeReport.path("mode").asText())) {
+                return modeReport;
+            }
+        }
+        return objectMapper.createObjectNode();
     }
 }
