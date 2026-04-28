@@ -49,4 +49,20 @@ class MemoryServiceTest {
         assertThat(snapshot.recentMessages().getFirst().content()).isEqualTo("第二轮问题");
         assertThat(snapshot.recentMessages().getLast().content()).isEqualTo("第三轮回答");
     }
+
+    @Test
+    void shouldExtractStableFactsFromUserMessagesIntoSnapshot() {
+        MemoryService memoryService = new MemoryService(new MessageSummaryCompressor(4, 6));
+
+        memoryService.append("sess_3", "user", "我叫小智");
+        memoryService.append("sess_3", "assistant", "你好，小智");
+        memoryService.append("sess_3", "user", "我在杭州做 Java Agent 后端开发");
+
+        MemorySnapshot snapshot = memoryService.snapshot("sess_3");
+
+        assertThat(snapshot.facts()).containsExactly(
+                "我叫小智",
+                "我在杭州做 Java Agent 后端开发"
+        );
+    }
 }

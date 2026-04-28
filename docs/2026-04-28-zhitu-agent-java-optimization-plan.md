@@ -96,6 +96,30 @@
 - 评估运行时的模型降级策略
 - 或者让 eval runner 能在 provider 冷却时更优雅地续跑 / 断点恢复
 
+## 0.2 最新进展补充（2026-04-28 深夜后）
+
+`Task 3` 已完成第一块最小可交付：把 session facts / long-term facts 的轻量版本贯通进了主链，但仍然保持“不改 Redis schema”的策略。
+
+本轮新增：
+
+- `src/main/java/com/zhituagent/memory/FactExtractor.java`
+- `MemorySnapshot` 增加 `facts`
+- `ContextManager` / `ContextBundle` 已把 `FACTS:` block 注入模型上下文
+- `GET /api/sessions/{sessionId}` 已返回 `facts`
+- `TraceInfo` 已增加 `factCount`
+
+当前实现边界：
+
+- facts 不是独立持久化表，也不是复杂画像系统
+- 仍然是在 `snapshot()` 阶段，从现有 user messages 中做轻量提取
+- 这样可以先验证“长期事实层”是否对多轮上下文有价值，再决定是否升级到更重的记忆结构
+
+这意味着 `Task 3` 还没有全部做完，但“记忆分层从 2 层变成 3 层”的第一步已经落地：
+
+- `summary`
+- `recentMessages`
+- `facts`
+
 ## 1. 当前判断
 
 当前仓库已经完成两层交付：

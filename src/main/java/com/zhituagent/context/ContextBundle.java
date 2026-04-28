@@ -8,6 +8,7 @@ public record ContextBundle(
         String systemPrompt,
         String summary,
         List<ChatMessageRecord> recentMessages,
+        List<String> facts,
         String currentMessage,
         List<String> modelMessages
 ) {

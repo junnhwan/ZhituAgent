@@ -79,4 +79,49 @@ class SessionControllerTest {
                 .andExpect(jsonPath("$.summary").value(org.hamcrest.Matchers.containsString("Earlier conversation summary")))
                 .andExpect(jsonPath("$.recentMessages.length()").value(4));
     }
+
+    @Test
+    void shouldReturnFactsForSessionDetail() throws Exception {
+        MvcResult createResult = mockMvc.perform(post("/api/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "user_20001",
+                                  "title": "事实提取测试"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode sessionNode = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        String sessionId = sessionNode.get("sessionId").asText();
+
+        mockMvc.perform(post("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sessionId": "%s",
+                                  "userId": "user_20001",
+                                  "message": "我叫小智"
+                                }
+                                """.formatted(sessionId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sessionId": "%s",
+                                  "userId": "user_20001",
+                                  "message": "我在杭州做 Java Agent 后端开发"
+                                }
+                                """.formatted(sessionId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/sessions/{sessionId}", sessionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facts.length()").value(2))
+                .andExpect(jsonPath("$.facts[0]").value("我叫小智"))
+                .andExpect(jsonPath("$.facts[1]").value("我在杭州做 Java Agent 后端开发"));
+    }
 }

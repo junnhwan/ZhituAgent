@@ -20,6 +20,10 @@ public class ContextManager {
             modelMessages.add("SUMMARY: " + memorySnapshot.summary());
         }
 
+        if (memorySnapshot.facts() != null && !memorySnapshot.facts().isEmpty()) {
+            modelMessages.add("FACTS: " + String.join(" | ", memorySnapshot.facts()));
+        }
+
         memorySnapshot.recentMessages().forEach(message ->
                 modelMessages.add(message.role().toUpperCase() + ": " + message.content())
         );
@@ -34,6 +38,7 @@ public class ContextManager {
                 systemPrompt,
                 memorySnapshot.summary(),
                 memorySnapshot.recentMessages(),
+                memorySnapshot.facts(),
                 currentMessage,
                 List.copyOf(modelMessages)
         );

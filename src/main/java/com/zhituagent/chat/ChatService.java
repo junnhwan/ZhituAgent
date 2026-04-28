@@ -116,6 +116,7 @@ public class ChatService {
                 routeDecision,
                 requestId,
                 latencyMs,
+                contextBundle.facts().size(),
                 contextBundle.modelMessages(),
                 answer
         );

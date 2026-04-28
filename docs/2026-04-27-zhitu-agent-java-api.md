@@ -115,6 +115,10 @@ http://localhost:8080/api
       "content": "先做 Context、记忆、RAG、会话、SSE 和 ToolUse。",
       "timestamp": "2026-04-27T16:21:03+08:00"
     }
+  ],
+  "facts": [
+    "我叫小智",
+    "我在杭州做 Java Agent 后端开发"
   ]
 }
 ```
@@ -140,13 +144,17 @@ http://localhost:8080/api
     "path": "retrieve-then-answer",
     "retrievalHit": true,
     "toolUsed": false,
-    "retrievalMode": "dense",
+    "retrievalMode": "hybrid-rerank",
     "contextStrategy": "recent-summary",
     "requestId": "req_xxx",
     "latencyMs": 128,
     "snippetCount": 2,
     "topSource": "project-notes.md",
     "topScore": 0.83,
+    "retrievalCandidateCount": 6,
+    "rerankModel": "Qwen/Qwen3-Reranker-8B",
+    "rerankTopScore": 0.97,
+    "factCount": 2,
     "inputTokenEstimate": 96,
     "outputTokenEstimate": 34
   }
@@ -164,6 +172,10 @@ http://localhost:8080/api
   - `snippetCount`
   - `topSource`
   - `topScore`
+  - `retrievalCandidateCount`
+  - `rerankModel`
+  - `rerankTopScore`
+  - `factCount`
   - `inputTokenEstimate`
   - `outputTokenEstimate`
 - 当前这些字段主要用于联调、观测和后续评估，不代表已经实现完整 tracing 平台。
@@ -205,7 +217,7 @@ data: {"content":"第一版建议先把"}
 
 ```text
 event: complete
-data: {"path":"tool-then-answer","retrievalHit":false,"toolUsed":true,"retrievalMode":"none","contextStrategy":"recent-summary","requestId":"req_xxx","latencyMs":66,"snippetCount":0,"topSource":"","topScore":0.0,"inputTokenEstimate":72,"outputTokenEstimate":18}
+data: {"path":"tool-then-answer","retrievalHit":false,"toolUsed":true,"retrievalMode":"none","contextStrategy":"recent-summary","requestId":"req_xxx","latencyMs":66,"snippetCount":0,"topSource":"","topScore":0.0,"retrievalCandidateCount":0,"rerankModel":"","rerankTopScore":0.0,"factCount":1,"inputTokenEstimate":72,"outputTokenEstimate":18}
 ```
 
 #### `error`
@@ -263,8 +275,9 @@ curl -N -X POST "http://localhost:8080/api/streamChat" ^
 
 说明：
 
-- 第一版只返回摘要和最近消息，不返回全量历史。
+- 当前返回摘要、最近消息和一层轻量 `facts`，不返回全量历史。
 - 更早消息通过 summary 表达。
+- `facts` 当前用于表达较稳定的用户背景信息，例如姓名、地点、职责、目标等。
 
 ### 3.5 `POST /api/knowledge`
 
@@ -390,6 +403,7 @@ curl -N -X POST "http://localhost:8080/api/streamChat" ^
   当前默认 `dense`
 - `contextStrategy`
   当前默认 `recent-summary`
+- `factCount`
 - `latencyMs`
 - `inputTokenEstimate`
 - `outputTokenEstimate`

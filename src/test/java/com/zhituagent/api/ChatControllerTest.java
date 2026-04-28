@@ -89,8 +89,24 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.trace.retrievalCandidateCount").value(0))
                 .andExpect(jsonPath("$.trace.rerankModel").value(""))
                 .andExpect(jsonPath("$.trace.rerankTopScore").value(0.0))
+                .andExpect(jsonPath("$.trace.factCount").value(0))
                 .andExpect(jsonPath("$.trace.inputTokenEstimate").isNumber())
                 .andExpect(jsonPath("$.trace.outputTokenEstimate").isNumber());
+    }
+
+    @Test
+    void shouldExposeFactCountInTraceWhenStableFactIsCaptured() throws Exception {
+        mockMvc.perform(post("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sessionId": "sess_fact_10001",
+                                  "userId": "user_20001",
+                                  "message": "我在杭州做 Java Agent 后端开发"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trace.factCount").value(1));
     }
 
     @Test
@@ -118,6 +134,7 @@ class ChatControllerTest {
         assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"retrievalCandidateCount\":0"));
         assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"rerankModel\":\"\""));
         assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"rerankTopScore\":0.0"));
+        assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"factCount\":0"));
         assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"inputTokenEstimate\":"));
         assertThat(mvcResult.getResponse().getContentAsString(), containsString("\"outputTokenEstimate\":"));
     }

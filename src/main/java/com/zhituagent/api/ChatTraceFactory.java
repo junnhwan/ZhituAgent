@@ -19,6 +19,7 @@ public class ChatTraceFactory {
     public TraceInfo create(RouteDecision routeDecision,
                             String requestId,
                             long latencyMs,
+                            int factCount,
                             List<String> inputMessages,
                             String outputText) {
         List<KnowledgeSnippet> snippets = routeDecision == null || routeDecision.snippets() == null
@@ -42,6 +43,7 @@ public class ChatTraceFactory {
                 routeDecision == null ? 0 : Math.max(0, routeDecision.retrievalCandidateCount()),
                 routeDecision == null || routeDecision.rerankModel() == null ? DEFAULT_RERANK_MODEL : routeDecision.rerankModel(),
                 routeDecision == null ? 0.0 : routeDecision.rerankTopScore(),
+                Math.max(0, factCount),
                 inputTokenEstimate,
                 outputTokenEstimate
         );

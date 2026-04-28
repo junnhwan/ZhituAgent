@@ -33,4 +33,26 @@ class ContextManagerTest {
         assertThat(bundle.modelMessages().get(1)).contains("SUMMARY:");
         assertThat(bundle.modelMessages().getLast()).contains("当前问题");
     }
+
+    @Test
+    void shouldIncludeFactsBlockInModelMessages() {
+        ContextManager contextManager = new ContextManager();
+
+        ContextBundle bundle = contextManager.build(
+                "你是测试助手",
+                new com.zhituagent.memory.MemorySnapshot(
+                        "已有总结",
+                        java.util.List.of(),
+                        java.util.List.of("我叫小智", "我在杭州做 Java Agent 后端开发")
+                ),
+                "结合我的背景给建议",
+                ""
+        );
+
+        assertThat(bundle.facts()).containsExactly("我叫小智", "我在杭州做 Java Agent 后端开发");
+        assertThat(bundle.modelMessages())
+                .anyMatch(message -> message.contains("FACTS:"))
+                .anyMatch(message -> message.contains("我叫小智"))
+                .anyMatch(message -> message.contains("我在杭州做 Java Agent 后端开发"));
+    }
 }

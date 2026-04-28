@@ -21,8 +21,9 @@
 - 已完成：第二阶段 `Task 3` 的 hybrid retrieval 与中文优化切分第一版已落地
 - 已完成：第二阶段 `Task 4` 的 Prometheus 指标与 Redis 记忆并发保护第一版已落地
 - 已完成：深化优化阶段 `Task 1` 的运行时评估 runner、多模式对比报告、检索 source 隔离第一版已落地
+- 已完成：深化优化阶段 `Task 3` 的轻量 facts 记忆层第一版已落地
 - 已完成：`/actuator/health` 与 `/actuator/prometheus` 已完成测试覆盖
-- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `33` 个测试全部通过
+- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `42` 个测试全部通过
 
 ## 当前进展
 
@@ -758,3 +759,59 @@ pgvector 手工联调结果：
   - 继续扩充真实评估 case
   - 观察校准规则是否会在更多中文查询上带来副作用
   - 进一步处理模型网关 `cooldown` 对评估稳定性的影响
+
+## 2026-04-28 深夜补充：深化优化阶段 Task 3 第一块
+
+状态：已完成第一块“轻量 facts 记忆层 + 上下文透传 + 接口可见性”
+
+本轮新增实现：
+
+- 已新增 `FactExtractor`
+  - 文件：
+    - `src/main/java/com/zhituagent/memory/FactExtractor.java`
+- 已扩展 `MemorySnapshot`
+  - 新增：
+    - `facts`
+- 已增强 `MemoryService`
+  - 在 `snapshot()` 阶段从现有 user messages 中提取稳定 facts
+  - 仍然保持“不改 Redis schema”的最小策略
+- 已增强 `ContextManager` / `ContextBundle`
+  - 现在会把 `FACTS:` block 拼进模型上下文
+- 已增强 `SessionDetailResponse` / `SessionService`
+  - `GET /api/sessions/{sessionId}` 现在会返回 `facts`
+- 已增强 `TraceInfo` / `ChatTraceFactory`
+  - 当前 `trace` 已新增：
+    - `factCount`
+
+本轮新增测试：
+
+- `src/test/java/com/zhituagent/memory/FactExtractorTest.java`
+- `MemoryServiceTest`
+- `ContextManagerTest`
+- `SessionControllerTest`
+- `ChatControllerTest`
+
+本轮已完成验证：
+
+- `.\mvnw.cmd "-Dtest=FactExtractorTest,MemoryServiceTest,ContextManagerTest,SessionControllerTest,ChatControllerTest" test` 通过
+- `.\mvnw.cmd test` 通过
+- 当前全量测试结果已更新为：
+  - `42` 个测试全部通过
+
+本轮实现边界说明：
+
+- 当前 facts 仍是轻量规则提取，不是完整画像系统
+- 还没有单独的长期记忆持久化结构
+- 还没有做 token budget 驱动的上下文裁剪
+
+当前判断：
+
+- 深化优化阶段 `Task 3` 已正式开始，并完成了第一块最小交付
+- 当前记忆层已经从：
+  - `summary + recentMessages`
+  升级到：
+  - `summary + recentMessages + facts`
+- 下一步更值得继续做的是：
+  - 上下文 budget / 裁剪策略
+  - facts 提取规则校准
+  - 长会话评估 case

@@ -15,28 +15,38 @@ public class MemoryService {
 
     private final MemoryStore memoryStore;
     private final MessageSummaryCompressor compressor;
+    private final FactExtractor factExtractor;
     private final MemoryLock memoryLock;
     private final MemoryMetricsRecorder memoryMetricsRecorder;
 
     @Autowired
     public MemoryService(MemoryStore memoryStore, MemoryLock memoryLock, MemoryMetricsRecorder memoryMetricsRecorder) {
-        this(memoryStore, new MessageSummaryCompressor(4, 6), memoryLock, memoryMetricsRecorder);
+        this(memoryStore, new MessageSummaryCompressor(4, 6), new FactExtractor(), memoryLock, memoryMetricsRecorder);
     }
 
     public MemoryService(MessageSummaryCompressor compressor) {
-        this(new InMemoryMemoryStore(), compressor, new NoopMemoryLock(), MemoryMetricsRecorder.noop());
+        this(new InMemoryMemoryStore(), compressor, new FactExtractor(), new NoopMemoryLock(), MemoryMetricsRecorder.noop());
     }
 
     MemoryService(MemoryStore memoryStore, MessageSummaryCompressor compressor) {
-        this(memoryStore, compressor, new NoopMemoryLock(), MemoryMetricsRecorder.noop());
+        this(memoryStore, compressor, new FactExtractor(), new NoopMemoryLock(), MemoryMetricsRecorder.noop());
     }
 
     MemoryService(MemoryStore memoryStore,
                   MessageSummaryCompressor compressor,
                   MemoryLock memoryLock,
                   MemoryMetricsRecorder memoryMetricsRecorder) {
+        this(memoryStore, compressor, new FactExtractor(), memoryLock, memoryMetricsRecorder);
+    }
+
+    MemoryService(MemoryStore memoryStore,
+                  MessageSummaryCompressor compressor,
+                  FactExtractor factExtractor,
+                  MemoryLock memoryLock,
+                  MemoryMetricsRecorder memoryMetricsRecorder) {
         this.memoryStore = memoryStore;
         this.compressor = compressor;
+        this.factExtractor = factExtractor;
         this.memoryLock = memoryLock;
         this.memoryMetricsRecorder = memoryMetricsRecorder;
     }
@@ -47,24 +57,29 @@ public class MemoryService {
 
     public MemorySnapshot snapshot(String sessionId) {
         List<ChatMessageRecord> messages = memoryStore.list(sessionId);
+        List<String> facts = factExtractor.extract(messages);
         if (!compressor.shouldCompress(messages)) {
             memoryMetricsRecorder.recordCompression("not_needed", storeType());
-            return compressor.compress(messages);
+            return withFacts(compressor.compress(messages), facts);
         }
 
         String lockToken = memoryLock.tryAcquire(sessionId, LOCK_TTL);
         if (lockToken == null) {
             memoryMetricsRecorder.recordCompression("lock_miss", storeType());
-            return compressor.recentOnly(messages);
+            return withFacts(compressor.recentOnly(messages), facts);
         }
 
         try {
             MemorySnapshot snapshot = compressor.compress(messages);
             memoryMetricsRecorder.recordCompression("compressed", storeType());
-            return snapshot;
+            return withFacts(snapshot, facts);
         } finally {
             memoryLock.release(sessionId, lockToken);
         }
+    }
+
+    private MemorySnapshot withFacts(MemorySnapshot snapshot, List<String> facts) {
+        return new MemorySnapshot(snapshot.summary(), snapshot.recentMessages(), facts);
     }
 
     private String storeType() {

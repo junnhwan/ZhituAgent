@@ -61,7 +61,8 @@ public class SessionService {
                 snapshot.summary(),
                 snapshot.recentMessages().stream()
                         .map(message -> new ChatMessageView(message.role(), message.content(), message.timestamp()))
-                        .toList()
+                        .toList(),
+                snapshot.facts()
         );
     }
 
