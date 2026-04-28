@@ -1,0 +1,104 @@
+.aside-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--t3);
+  margin-bottom: 20px;
+}
+
+.aside-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aside-metric {
+  background: rgba(255,255,255,0.45);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.aside-metric::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%);
+  pointer-events: none;
+}
+.aside-metric:hover {
+  border-color: var(--glass-glow);
+}
+
+.aside-metric-head {
+  display: flex; align-items: center; gap: 6px; color: var(--azure-deep);
+}
+.aside-metric-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--t3);
+}
+.aside-metric-val {
+  display: block; margin-top: 8px;
+  font-family: var(--mono); font-size: 0.9rem; font-weight: 700; color: var(--t1);
+}
+.aside-metric-val.positive { color: var(--azure-deep); }
+
+/* Status */
+.aside-status {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.45);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: var(--r-md);
+  position: relative;
+  overflow: hidden;
+}
+.aside-status::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.aside-status-row {
+  display: flex; align-items: center; gap: 6px;
+}
+.aside-status-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--t3);
+}
+.aside-status-icon { color: var(--t3); }
+.aside-status-icon.streaming { color: var(--azure); animation: pulse 1.5s infinite; }
+.aside-status-icon.complete { color: var(--green); }
+.aside-status-icon.error { color: var(--red); }
+
+.aside-status-value {
+  display: block; margin-top: 8px;
+  font-size: 0.9rem; font-weight: 800; color: var(--t1);
+}
+.aside-status-value.status-streaming { color: var(--azure-deep); }
+.aside-status-value.status-complete { color: var(--green); }
+.aside-status-value.status-error { color: var(--red); }
+
+/* Progress bar */
+.aside-bar-track {
+  margin-top: 18px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+.aside-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--g-azure);
+  box-shadow: 0 0 8px rgba(56,189,248,0.3);
+}
+
+@keyframes pulse {
+  0%   { opacity: 0.5; transform: scale(1); }
+  50%  { opacity: 1;   transform: scale(1.15); }
+  100% { opacity: 0.5; transform: scale(1); }
+}

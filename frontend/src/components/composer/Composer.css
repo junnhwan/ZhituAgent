@@ -1,0 +1,60 @@
+.composer {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 18px;
+  padding: 10px 10px 10px 20px;
+  box-shadow: var(--s3), var(--si);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.composer-inner::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.composer-inner:focus-within {
+  border-color: var(--glass-glow);
+  box-shadow: var(--s3), 0 0 0 4px rgba(56,189,248,0.06);
+}
+
+.composer-input {
+  flex: 1;
+  border: none; outline: none;
+  background: transparent;
+  font: 500 0.95rem/1.5 var(--sans);
+  color: var(--t1);
+  resize: none;
+  min-height: 28px;
+  max-height: 120px;
+}
+.composer-input::placeholder { color: var(--t4); }
+.composer-input:disabled { opacity: 0.4; }
+
+.composer-send {
+  appearance: none; border: none; cursor: pointer;
+  width: 38px; height: 38px; border-radius: 12px;
+  background: rgba(0,0,0,0.04);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--t4);
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+.composer-send.ready {
+  background: var(--g-azure);
+  color: white;
+  box-shadow: 0 4px 12px rgba(56,189,248,0.3);
+}
+.composer-send:disabled { cursor: not-allowed; opacity: 0.5; }

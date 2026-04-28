@@ -1,0 +1,12 @@
+.sc-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+.sc-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--azure);
+  display: inline-block;
+  box-shadow: 0 0 8px rgba(56,189,248,0.4);
+}

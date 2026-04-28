@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Palette */
+  --bg: #fdfbf7;
+  --bg-deep: #f5f0e8;
+  --glass: rgba(255, 255, 255, 0.4);
+  --glass-strong: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.35);
+  --glass-glow: rgba(56, 189, 248, 0.35);
+  --azure: #38bdf8;
+  --azure-deep: #0369a1;
+  --azure-glow: rgba(56, 189, 248, 0.15);
+  --warm: #f59e0b;
+  --warm-glow: rgba(245, 158, 11, 0.1);
+  --purple: #a855f7;
+  --green: #10b981;
+  --red: #ef4444;
+  --t1: #0f172a;
+  --t2: #475569;
+  --t3: #94a3b8;
+  --t4: #cbd5e1;
+
+  /* Type */
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Radii */
+  --r-xl: 28px;
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 10px;
+
+  /* Shadows */
+  --s1: 0 2px 4px rgba(0,0,0,0.02);
+  --s2: 0 8px 24px rgba(15,23,42,0.06);
+  --s3: 0 16px 48px rgba(15,23,42,0.1);
+  --s4: 0 24px 64px rgba(15,23,42,0.14);
+  --si: inset 0 1px 0 rgba(255,255,255,0.5);
+
+  /* Gradients */
+  --g-azure: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 50%, #0369a1 100%);
+  --g-text: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--sans);
+  color: var(--t1);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--azure-glow);
+  color: var(--t1);
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.06); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.12); }

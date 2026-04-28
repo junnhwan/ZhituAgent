@@ -1,0 +1,54 @@
+.wk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  background: rgba(255,255,255,0.35);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255,255,255,0.3);
+  flex-shrink: 0;
+}
+
+.wk-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wk-header-icon {
+  color: var(--azure);
+}
+
+.wk-header-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: var(--g-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.wk-header-id {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--t3);
+  background: rgba(0,0,0,0.03);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.wk-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.wk-composer-dock {
+  flex-shrink: 0;
+  padding: 0 32px 20px;
+  pointer-events: none;
+}
+.wk-composer-dock > * {
+  pointer-events: all;
+}
