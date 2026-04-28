@@ -137,8 +137,7 @@ public class ChatController {
                                         routeDecision,
                                         requestId,
                                         latencyMs,
-                                        contextBundle.facts().size(),
-                                        contextBundle.modelMessages(),
+                                        contextBundle,
                                         answerBuilder.toString()
                                 );
                                 log.info(

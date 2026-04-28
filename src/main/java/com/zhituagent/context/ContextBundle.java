@@ -10,6 +10,7 @@ public record ContextBundle(
         List<ChatMessageRecord> recentMessages,
         List<String> facts,
         String currentMessage,
-        List<String> modelMessages
+        List<String> modelMessages,
+        String contextStrategy
 ) {
 }

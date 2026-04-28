@@ -120,6 +120,31 @@
 - `recentMessages`
 - `facts`
 
+## 0.3 最新进展补充（2026-04-28 深夜后续）
+
+`Task 3` 的第二块也已完成：上下文组装从“线性拼接”升级成了最小版 budget-aware 组装。
+
+本轮新增：
+
+- `src/main/java/com/zhituagent/context/TokenEstimator.java`
+- `ContextManager` 新增：
+  - summary / facts / evidence / recent message 的分块预算
+  - 超预算时优先裁掉更旧的 recent messages
+  - `contextStrategy` 会按是否注入 facts、是否发生裁剪输出不同值
+- `ChatTraceFactory` 不再写死 `contextStrategy`
+  - 现在会返回真实上下文策略
+
+当前收益：
+
+- 后端现在不仅知道“有没有 summary / facts”，还知道是否真的发生了上下文裁剪
+- 这让后续长会话评估和 trace 观察有了更真实的上下文信号
+
+当前边界：
+
+- 还不是严格 token-by-token 的模型级预算器
+- 还没有接入 provider 真实 tokenizer
+- 目前仍属于轻量估算策略，但已经足够支撑当前阶段的上下文实验
+
 ## 1. 当前判断
 
 当前仓库已经完成两层交付：

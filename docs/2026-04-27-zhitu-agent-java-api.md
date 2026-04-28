@@ -179,6 +179,13 @@ http://localhost:8080/api
   - `inputTokenEstimate`
   - `outputTokenEstimate`
 - 当前这些字段主要用于联调、观测和后续评估，不代表已经实现完整 tracing 平台。
+- `contextStrategy` 当前可见值示例：
+  - `recent-summary`
+    表示使用了基础 summary + recent messages 策略
+  - `recent-summary-facts`
+    表示额外注入了轻量 facts 层
+  - `recent-summary-facts-budgeted`
+    表示注入 facts 的同时，发生了 budget-aware 上下文裁剪
 
 curl 示例：
 
@@ -278,6 +285,7 @@ curl -N -X POST "http://localhost:8080/api/streamChat" ^
 - 当前返回摘要、最近消息和一层轻量 `facts`，不返回全量历史。
 - 更早消息通过 summary 表达。
 - `facts` 当前用于表达较稳定的用户背景信息，例如姓名、地点、职责、目标等。
+- 当会话输入过长时，后端会优先裁掉更旧的 `recentMessages`，必要时再缩短其他上下文块。
 
 ### 3.5 `POST /api/knowledge`
 
@@ -402,7 +410,7 @@ curl -N -X POST "http://localhost:8080/api/streamChat" ^
 - `retrievalMode`
   当前默认 `dense`
 - `contextStrategy`
-  当前默认 `recent-summary`
+  当前基础值为 `recent-summary`，有 facts 或 budget 裁剪时会扩展成更具体的策略名
 - `factCount`
 - `latencyMs`
 - `inputTokenEstimate`

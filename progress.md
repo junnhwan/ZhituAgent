@@ -22,8 +22,9 @@
 - 已完成：第二阶段 `Task 4` 的 Prometheus 指标与 Redis 记忆并发保护第一版已落地
 - 已完成：深化优化阶段 `Task 1` 的运行时评估 runner、多模式对比报告、检索 source 隔离第一版已落地
 - 已完成：深化优化阶段 `Task 3` 的轻量 facts 记忆层第一版已落地
+- 已完成：深化优化阶段 `Task 3` 的 budget-aware 上下文裁剪第一版已落地
 - 已完成：`/actuator/health` 与 `/actuator/prometheus` 已完成测试覆盖
-- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `42` 个测试全部通过
+- 已完成：当前 `.\mvnw.cmd test` 为绿色，统计为 `43` 个测试全部通过
 
 ## 当前进展
 
@@ -815,3 +816,59 @@ pgvector 手工联调结果：
   - 上下文 budget / 裁剪策略
   - facts 提取规则校准
   - 长会话评估 case
+
+## 2026-04-28 深夜补充：深化优化阶段 Task 3 第二块
+
+状态：已完成第二块“budget-aware 上下文裁剪 + 真实 contextStrategy 透出”
+
+本轮新增实现：
+
+- 已新增 `TokenEstimator`
+  - 文件：
+    - `src/main/java/com/zhituagent/context/TokenEstimator.java`
+- 已增强 `ContextManager`
+  - 当前会对以下上下文块做最小预算控制：
+    - `summary`
+    - `facts`
+    - `recentMessages`
+    - `rag evidence`
+  - 当总上下文过长时，会优先裁掉更旧的 `recentMessages`
+- 已增强 `ContextBundle`
+  - 当前新增：
+    - `contextStrategy`
+- 已增强 `ChatTraceFactory`
+  - 不再写死 `recent-summary`
+  - 现在会返回真实上下文策略，例如：
+    - `recent-summary`
+    - `recent-summary-facts`
+    - `recent-summary-facts-budgeted`
+- 已增强 `ChatService` / `ChatController`
+  - trace 现在基于真实 `ContextBundle` 组装
+
+本轮新增测试：
+
+- `ContextManagerTest`
+  - 新增 budget exceeded 场景
+- `ChatControllerTest`
+  - 新增 facts 进入 trace 后的 `contextStrategy` 断言
+
+本轮已完成验证：
+
+- `.\mvnw.cmd "-Dtest=ContextManagerTest,ChatControllerTest,BaselineEvalRunnerTest" test` 通过
+- `.\mvnw.cmd test` 通过
+- 当前全量测试结果已更新为：
+  - `43` 个测试全部通过
+
+本轮实现边界说明：
+
+- 当前 budget 仍基于轻量 token 估算，不是 provider 原生 tokenizer
+- 当前裁剪策略优先级已经可控，但还没有做到更细粒度的主题级压缩
+- 当前长会话收益还没有用独立 eval case 单独量化
+
+当前判断：
+
+- 深化优化阶段 `Task 3` 已不再只是“多一层 facts”，而是开始具备真正的上下文治理能力
+- 下一步更值得继续做的是：
+  - 长会话专项评估 case
+  - facts 规则校准与误提取抑制
+  - 更细的 context budget / block priority 调参

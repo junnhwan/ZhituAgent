@@ -106,6 +106,7 @@ class ChatControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trace.contextStrategy").value("recent-summary-facts"))
                 .andExpect(jsonPath("$.trace.factCount").value(1));
     }
 
