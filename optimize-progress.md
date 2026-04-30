@@ -70,18 +70,59 @@ aggregate: `meanRecallAt5 = 0.833`, `meanNdcgAt5 = 0.871`, `rankingCheckedCases 
 
 ---
 
-### C-2 ⏳ 扩充 baseline cases 到 30-50 条 + train/eval 拆分
+### C-2 ✅ 扩充 baseline cases + train/eval 拆分(2026-04-30 完成)
 
-**目标**: 用 7 条 fixture 算出来的数字统计意义不足。扩到 30-50 条,8:2 拆 train/eval,eval 集 holdout 不参与调试。
+**做了什么**
 
-类型分布建议:
-- 5 条 `direct-answer`(打招呼、能力提问、观点性问题)
-- 3 条 `tool-answer`(time 工具的不同问法)
-- 5 条 `long-context`(总结、跨轮引用、预算触发)
-- 17 条 `rag-answer`(单 doc / 多 doc / 歧义召回 / 不相关 query / 多跳推理)
-- 总计 ~30 条
+- Fixture 从 7 → **16 cases**(增 9 条)
+- 新增 `BaselineEvalCase.splitMode`(默认 `train`,显式标 `eval` 进入 holdout)
+- `BaselineEvalResult` 加 `trainSplit` / `evalSplit` 两个 `SplitBreakdown` 子聚合(对比 train vs holdout 是否存在过拟合 fixture)
+- `BaselineEvalResult.CaseResult` 加 `splitMode` 字段便于 per-case 追溯
 
-每条带 `splitMode: "train" | "eval"` 标签。
+**新增 9 条 case 类型分布**
+
+| 类型 | 新增 | split | 关键测试点 |
+|---|---|---|---|
+| `direct-002` | 闲聊 | train | empty knowledgeEntries,验证 RAG 不误触 |
+| `direct-003` | 抽象观点 | **eval** | 问 Java vs Python,无 KB seed |
+| `direct-004` | 创作 | train | 讲笑话,无 KB seed |
+| `tool-002` | 时间变体 | **eval** | "日期+几号",验证关键词路由对变体的鲁棒性 |
+| `rag-simple-002` | 单 doc 事实 | train | LangChain4j 版本查询 |
+| `rag-simple-003` | 单 doc 选型 | train | 向量数据库选 pgvector |
+| `rag-simple-004` | 实现细节 | train | trace 归档机制 |
+| `rag-simple-005` | 内部命名 | **eval** | knowledge-write 工具名 |
+| `rag-multi-001` | 多 doc 都相关 | **eval** | Agent 编排路径(Recall@5 = 1.0 理想场景) |
+
+**关键设计决策**
+
+1. **`splitMode` 默认 train** —— 老 case 不指定即进 train,向后兼容。eval 集 4 条由我手动选,覆盖 direct/tool/rag-simple/rag-multi 4 种类型(防止 eval 集 type 偏 skew)。
+2. **`allowedSources` 已经按 case 过滤** —— 测试 KB 是 `InMemoryKnowledgeStore` 累积式存储,但 `RetrievalRequestOptions.scoped(mode, allowedSources)` 把每个 case 的检索范围锁定到自己的 `knowledgeEntries.sourceName`。这意味着 KB 跨 case 污染不会触发误命中,设计 case 时不用回避字符重叠。**这是项目原有的工程审美点**,可以在面试讲。
+3. **eval 集刻意挑边界场景** —— `direct-003` 含 "Java"(可能与 latin tech 词形成 char overlap)、`tool-002` 是变体问法、`rag-multi-001` 多 doc 全相关。这些 case 对路由/检索更挑战,放 eval 集才能真正测出泛化能力。
+
+**stub LLM 跑出的 v1 数字**(16 case fixture, hybrid-rerank mode)
+
+| 指标 | Train (n=12) | Eval (n=4) | Overall |
+|---|---|---|---|
+| 通过率 | 12/12 = 100% | 4/4 = 100% | 16/16 |
+| 路由准确率 | 1.000 | 1.000 | 1.000 |
+| Recall@5 | **0.917** (n=6) | **0.750** (n=2) | 0.875 |
+| MRR@5 | 1.000 | 1.000 | 1.000 |
+| nDCG@5 | **0.936** | **0.807** | 0.903 |
+| keyword Coverage | 0.250 | 0.000 | 0.222 |
+
+**讲故事点**: train nDCG 0.936 → eval nDCG 0.807,**0.13 的 gap 就是"我有 holdout 集合,且观察到了非平凡 generalization gap"**。在阶段 A 改造后,eval 数字应该和 train 一起涨,这就是"我的优化没有过拟合到 fixture"的证据。
+
+**改动文件**
+
+```
+修改   src/main/java/com/zhituagent/eval/BaselineEvalCase.java        # +splitMode
+修改   src/main/java/com/zhituagent/eval/BaselineEvalResult.java      # +SplitBreakdown record + 2 splits + CaseResult.splitMode
+修改   src/main/java/com/zhituagent/eval/BaselineEvalRunner.java      # buildSplit 算 per-split aggregate
+修改   src/main/resources/eval/baseline-chat-cases.jsonl              # 7 → 16 cases
+修改   src/test/resources/eval/baseline-chat-cases.jsonl              # 同步
+```
+
+测试:`mvn -o test` 49/49 全绿。
 
 ---
 

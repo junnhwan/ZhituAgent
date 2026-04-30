@@ -21,6 +21,7 @@ record BaselineEvalCase(
         Map<String, ModeExpectation> modeExpectations,
         List<String> relevantSourceIds,
         List<String> expectedAnswerKeywords,
+        String splitMode,
         String notes
 ) {
 
@@ -30,6 +31,7 @@ record BaselineEvalCase(
         modeExpectations = modeExpectations == null ? Map.of() : Map.copyOf(modeExpectations);
         relevantSourceIds = relevantSourceIds == null ? List.of() : List.copyOf(relevantSourceIds);
         expectedAnswerKeywords = expectedAnswerKeywords == null ? List.of() : List.copyOf(expectedAnswerKeywords);
+        splitMode = splitMode == null || splitMode.isBlank() ? "train" : splitMode.toLowerCase();
     }
 
     ModeExpectation modeExpectationFor(String mode) {

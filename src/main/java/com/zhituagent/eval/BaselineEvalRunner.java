@@ -123,6 +123,8 @@ class BaselineEvalRunner {
                 BaselineEvalResult.CaseResult::ndcgAt5);
         double meanAnswerKeywordCoverage = meanOverApplied(results, BaselineEvalResult.CaseResult::keywordCheckApplied,
                 BaselineEvalResult.CaseResult::answerKeywordCoverage);
+        BaselineEvalResult.SplitBreakdown trainSplit = buildSplit("train", results);
+        BaselineEvalResult.SplitBreakdown evalSplit = buildSplit("eval", results);
         String resolvedReportMode = resolveReportMode(modeLabel, results);
 
         return new BaselineEvalResult(
@@ -150,6 +152,8 @@ class BaselineEvalRunner {
                 meanAnswerKeywordCoverage,
                 rankingCheckedCases,
                 keywordCheckedCases,
+                trainSplit,
+                evalSplit,
                 List.copyOf(results)
         );
     }
@@ -267,7 +271,8 @@ class BaselineEvalRunner {
                 ndcgAt5,
                 expectedAnswerKeywords,
                 keywordCheckApplied,
-                answerKeywordCoverage
+                answerKeywordCoverage,
+                evalCase.splitMode()
         );
     }
 
@@ -402,6 +407,38 @@ class BaselineEvalRunner {
             count++;
         }
         return count == 0L ? 0.0 : sum / count;
+    }
+
+    private BaselineEvalResult.SplitBreakdown buildSplit(String splitMode,
+                                                         List<BaselineEvalResult.CaseResult> allResults) {
+        List<BaselineEvalResult.CaseResult> bucket = allResults.stream()
+                .filter(result -> splitMode.equalsIgnoreCase(result.splitMode()))
+                .toList();
+        if (bucket.isEmpty()) {
+            return new BaselineEvalResult.SplitBreakdown(splitMode, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
+        }
+        int rankingCases = (int) bucket.stream()
+                .filter(BaselineEvalResult.CaseResult::rankingCheckApplied)
+                .count();
+        int keywordCases = (int) bucket.stream()
+                .filter(BaselineEvalResult.CaseResult::keywordCheckApplied)
+                .count();
+        return new BaselineEvalResult.SplitBreakdown(
+                splitMode,
+                bucket.size(),
+                (int) bucket.stream().filter(this::passed).count(),
+                ratio(bucket.stream().filter(BaselineEvalResult.CaseResult::routeMatched).count(), bucket.size()),
+                meanOverApplied(bucket, BaselineEvalResult.CaseResult::rankingCheckApplied,
+                        BaselineEvalResult.CaseResult::recallAt5),
+                meanOverApplied(bucket, BaselineEvalResult.CaseResult::rankingCheckApplied,
+                        BaselineEvalResult.CaseResult::mrrAt5),
+                meanOverApplied(bucket, BaselineEvalResult.CaseResult::rankingCheckApplied,
+                        BaselineEvalResult.CaseResult::ndcgAt5),
+                meanOverApplied(bucket, BaselineEvalResult.CaseResult::keywordCheckApplied,
+                        BaselineEvalResult.CaseResult::answerKeywordCoverage),
+                rankingCases,
+                keywordCases
+        );
     }
 
     private double average(List<Long> values) {

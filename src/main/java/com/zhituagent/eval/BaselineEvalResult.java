@@ -27,8 +27,24 @@ record BaselineEvalResult(
         double meanAnswerKeywordCoverage,
         int rankingCheckedCases,
         int keywordCheckedCases,
+        SplitBreakdown trainSplit,
+        SplitBreakdown evalSplit,
         List<CaseResult> results
 ) {
+
+    record SplitBreakdown(
+            String splitMode,
+            int totalCases,
+            int passedCases,
+            double routeAccuracy,
+            double meanRecallAt5,
+            double meanMrrAt5,
+            double meanNdcgAt5,
+            double meanAnswerKeywordCoverage,
+            int rankingCheckedCases,
+            int keywordCheckedCases
+    ) {
+    }
 
     record CaseResult(
             String caseId,
@@ -77,7 +93,8 @@ record BaselineEvalResult(
             double ndcgAt5,
             List<String> expectedAnswerKeywords,
             boolean keywordCheckApplied,
-            double answerKeywordCoverage
+            double answerKeywordCoverage,
+            String splitMode
     ) {
     }
 }
