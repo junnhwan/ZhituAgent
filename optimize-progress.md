@@ -672,6 +672,64 @@ A-5 baseline 比对时打开此 flag,看那些 v1 检索 miss 的 case 是否被
 
 ---
 
+### MCP ✅ Model Context Protocol 客户端骨架(2026-04-30 完成)
+
+**做了什么**
+
+加了完整的 MCP 接入架子,让外部 MCP server 暴露的工具能直接进 LLM 的 function-calling 词表,不需要改 ToolCallExecutor / function-calling pipeline。今天 ship 的实现是 `MockMcpClient`(in-memory + 两个 demo 工具),production 切到 stdio/SSE 真 client 时只换 bean 即可。
+
+- 新增 `mcp/McpClient` interface:`name()` + `listTools()` + `callTool(name, args)` 三个方法,直接镜像 Model Context Protocol 规范的 JSON-RPC `tools/list` + `tools/call`
+- 新增 `mcp/McpToolSpec` record:`{name, description, inputSchema}` 直接复用 LangChain4j `JsonObjectSchema`,与 `ToolDefinition.parameterSchema()` 对齐
+- 新增 `mcp/McpCallResult` record:`{isError, content, metadata}`,带 `ok()` / `error()` 静态工厂
+- 新增 `mcp/MockMcpClient`:暴露两个 demo 工具
+  - `calculator(expression)`:用内嵌的 `ArithmeticEvaluator`(shunting-yard 风格 + - * / 括号 + 一元负号),返回精确数值结果
+  - `weather_lookup(city)`:基于城市名 hash 的确定性 stub 数据(温度 10-29°C × 5 种 condition),测试不会 flaky
+- 新增 `mcp/McpToolAdapter implements ToolDefinition`:把 McpToolSpec 包装成 ToolDefinition,工具名加前缀 `<server>.<tool>`(如 `mock-mcp.calculator`)避免与本地工具名冲突;description 加 `[mcp:<server>]` 前缀让 trace 一眼能看出来源;execute 调 `client.callTool(...)`,失败包成 `success=false summary="mcp client failed: ..."` 走 ToolCallExecutor 的统一观察值回退路径
+- 新增 `mcp/McpProperties`(`zhitu.mcp.enabled` default false + `transport: mock|stdio|sse`,目前只实现 `mock`)
+- 新增 `mcp/McpToolRegistrar`(@Component):`@PostConstruct` 调 `client.listTools()` → 创建 `McpToolAdapter` → `toolRegistry.register(...)`,完全在 Spring 启动后注册不破坏构造时的 List 注入
+- `tool/ToolRegistry` 加 `register(ToolDefinition)` + `unregister(name)` 方法,用 synchronized 保证 thread safety,find/names/specifications 也加 synchronized
+- `config/WebConfig`:`@EnableConfigurationProperties` 加 `McpProperties.class`;条件 bean `mockMcpClient()` 在 `zhitu.mcp.enabled=true` 且无其他 McpClient bean 时自动注入
+
+**关键设计决策**
+
+1. **Adapter pattern,不破 ToolDefinition 接口** — McpToolAdapter 把 MCP-shape 包成内部 ToolDefinition,外层 ToolCallExecutor / function-calling pipeline 不知道也不关心 tool 是本地还是远程。这是 OpenAI / Anthropic / LangChain 都用的标准做法。简历可挂"用 adapter 让外部协议无侵入接入,本地 tool 与 MCP tool 在 LLM 视角等价"。
+2. **`<server>.<tool>` 前缀命名** — 避免本地 `knowledge-write` 与未来某个 MCP server 也叫 `knowledge-write` 撞名;trace span attribute `toolName` 也立即能看出来源。代价:LLM 看到的工具名稍长(`mock-mcp.calculator`),但 description 已经解释了,不影响选择。
+3. **`@PostConstruct` 注册而非构造时注入** — Spring 容器启动时,`ToolRegistry` 构造器接受 `List<ToolDefinition>`,这时 MCP client 还没 listTools。`McpToolRegistrar` 在 init phase 末尾调 listTools 并 register,等所有本地 @Component ToolDefinition 都进了 registry 后再追加 MCP 工具。简历可挂"late-binding registration 让 MCP 与本地工具初始化顺序解耦"。
+4. **`MockMcpClient` 的 `weather_lookup` 用 hash 决定温度/条件** — 不引入 java.util.Random(可重入但需要 seeding),不调真天气 API(测试要 deterministic),用 `city.hashCode() % N` 让同样 city 永远拿同样结果。简历可挂"测试 deterministic 是 MCP 集成层最容易踩的坑,提前规避"。
+5. **`ArithmeticEvaluator` 自己写不引第三方** — `expression4j` / `mvel` / `nashorn` 都能算,但都是几百 KB 的依赖,只为一个 demo 工具不值。手写 shunting-yard parser 100 行覆盖 + - * / 和括号,够 demo,bundle 不胖。
+6. **两层 enable 开关** — `zhitu.mcp.enabled=false` 时 `MockMcpClient` bean 不创建,`McpToolRegistrar.@PostConstruct` 也直接退出。这样 production 跑空载零开销;A-5 eval 时也不会意外把 MCP 工具混入 baseline。
+7. **真实 MCP SDK 推迟** — `io.modelcontextprotocol.java-sdk` 在 2026-04 还在快速迭代,API surface 不稳;接口已经按 spec 设计,真 SDK 一旦 stable 只需写一个 `StdioMcpClient implements McpClient`,其他不动。简历叙事点:"interface ready, swap implementation when SDK stable"。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/mcp/McpClient.java
+新增   src/main/java/com/zhituagent/mcp/McpToolSpec.java
+新增   src/main/java/com/zhituagent/mcp/McpCallResult.java
+新增   src/main/java/com/zhituagent/mcp/MockMcpClient.java
+新增   src/main/java/com/zhituagent/mcp/ArithmeticEvaluator.java
+新增   src/main/java/com/zhituagent/mcp/McpToolAdapter.java
+新增   src/main/java/com/zhituagent/mcp/McpProperties.java
+新增   src/main/java/com/zhituagent/mcp/McpToolRegistrar.java
+修改   src/main/java/com/zhituagent/tool/ToolRegistry.java       # +register +unregister + synchronized
+修改   src/main/java/com/zhituagent/config/WebConfig.java        # +McpProperties +mockMcpClient bean
+新增   src/test/java/com/zhituagent/mcp/MockMcpClientTest.java   # 7 cases
+新增   src/test/java/com/zhituagent/mcp/McpToolRegistrarTest.java  # 5 cases
+```
+
+测试:`mvn -o test` 116/116 全绿(+12 新)。
+
+**怎么开**: `application-local.yml` 加:
+```yaml
+zhitu:
+  mcp:
+    enabled: true
+    transport: mock
+```
+启动后 `GET /api/observability/tools`(或 LLM function spec 输出)能看到 `mock-mcp.calculator` / `mock-mcp.weather_lookup` 两个工具。问 LLM "12 乘以 7 等于多少",LLM 会调用 `mock-mcp.calculator` 拿到 84。
+
+---
+
 ## 阶段 2 — 差异化亮点(待开始)
 
 7 个子任务,任挑两三个写进简历即可:
@@ -680,6 +738,7 @@ A-5 baseline 比对时打开此 flag,看那些 v1 检索 miss 的 case 是否被
 - ✅ Self-RAG / CRAG 检索充分性评估 — 见 SR 段落
 - ✅ Trace 升 span 树 + 前端 TraceTree(LangSmith 对标)— 见 T2 段落
 - ✅ HITL(Anthropic computer use 对标)— 见 HL.a(后端)+ HL.b(前端)段落
+- ✅ MCP 客户端(Model Context Protocol)— 见 MCP 段落
 - MemGPT / Mem0 风格 memory(LLM 抽取 + add/update/merge + reflection)
 - MCP 客户端
 - HITL(@RequireApproval + SSE tool_call_pending)
