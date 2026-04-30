@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { streamChat } from "../api/chat";
 import type { TraceInfo } from "../types/api";
+import type { PendingToolCall } from "../types/events";
 import type { AppAction } from "./useSessionManager";
 
 export interface TraceDisplay extends TraceInfo {
@@ -36,11 +37,13 @@ export function emptyTraceDisplay(): TraceDisplay {
 export function useStreamingChat(
   dispatch: React.Dispatch<AppAction>,
   onTraceChange: (trace: TraceDisplay) => void,
+  onToolCallPending?: (pending: PendingToolCall) => void,
 ) {
   const abortRef = useRef<AbortController | null>(null);
   const rafRef = useRef<number>(0);
   const pendingContent = useRef("");
   const pendingSessionId = useRef("");
+  const lastRequest = useRef<{ sessionId: string; userId: string; message: string } | null>(null);
 
   const flushUpdate = useCallback(() => {
     if (pendingContent.current && pendingSessionId.current) {
@@ -61,18 +64,26 @@ export function useStreamingChat(
     }
   }, [flushUpdate]);
 
-  const send = useCallback(
-    (sessionId: string, userId: string, message: string) => {
+  const dispatchSend = useCallback(
+    (
+      sessionId: string,
+      userId: string,
+      message: string,
+      metadata: Record<string, unknown>,
+      treatAsResume: boolean,
+    ) => {
       abortRef.current?.abort();
       cancelAnimationFrame(rafRef.current);
 
       pendingContent.current = "";
       pendingSessionId.current = sessionId;
 
-      dispatch({
-        type: "ADD_MESSAGE",
-        payload: { sessionId, message: { role: "user", content: message } },
-      });
+      if (!treatAsResume) {
+        dispatch({
+          type: "ADD_MESSAGE",
+          payload: { sessionId, message: { role: "user", content: message } },
+        });
+      }
 
       dispatch({
         type: "ADD_MESSAGE",
@@ -83,7 +94,7 @@ export function useStreamingChat(
       onTraceChange({ ...emptyTrace, status: "streaming" });
 
       const controller = streamChat(
-        { sessionId, userId, message, metadata: { client: "web" } },
+        { sessionId, userId, message, metadata },
         {
           onStart: () => {},
           onToken: (token) => {
@@ -109,18 +120,46 @@ export function useStreamingChat(
             dispatch({ type: "SET_SENDING", payload: false });
             onTraceChange({ ...emptyTrace, status: "error" });
           },
+          onToolCallPending: (pending) => {
+            onToolCallPending?.(pending);
+          },
         },
       );
 
       abortRef.current = controller;
     },
-    [dispatch, onTraceChange, scheduleFlush],
+    [dispatch, onTraceChange, onToolCallPending, scheduleFlush],
+  );
+
+  const send = useCallback(
+    (sessionId: string, userId: string, message: string) => {
+      lastRequest.current = { sessionId, userId, message };
+      dispatchSend(sessionId, userId, message, { client: "web" }, false);
+    },
+    [dispatchSend],
+  );
+
+  const resendWithApproval = useCallback(
+    (approvedToolCallId: string) => {
+      const last = lastRequest.current;
+      if (!last) return;
+      dispatchSend(
+        last.sessionId,
+        last.userId,
+        last.message,
+        { client: "web", approvedToolCallId },
+        true,
+      );
+    },
+    [dispatchSend],
   );
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
     cancelAnimationFrame(rafRef.current);
-  }, []);
+    dispatch({ type: "SET_SENDING", payload: false });
+    onTraceChange({ ...emptyTrace, status: "idle" });
+  }, [dispatch, onTraceChange]);
 
-  return { send, abort };
+  return { send, abort, resendWithApproval };
 }

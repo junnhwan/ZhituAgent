@@ -615,6 +615,63 @@ A-5 baseline 比对时打开此 flag,看那些 v1 检索 miss 的 case 是否被
 
 ---
 
+### HL.b ✅ 前端 HitlConfirmPanel + abort 接 Composer(2026-04-30 完成)
+
+**做了什么**
+
+闭环 HL.a 的后端审批门,前端弹 modal 让用户决定,批准后**自动重发**带 approval token,体验上和 ChatGPT 的 plugin confirm 一致。Composer 在 streaming 时切红色 Stop 按钮调 abort。
+
+- `frontend/src/types/events.ts` 加 `PendingToolCall` 接口 + `StreamCallbacks.onToolCallPending` 可选回调
+- `frontend/src/api/chat.ts`:
+  - 新事件 case `"tool_call_pending"` → 解析 payload 调 callback
+  - 顺手补全 `complete` 事件的 `retrievedSources / traceId / spans` 三个 T2 时漏的字段(SpanTree 现在能真拿到数据了)
+- 新增 `frontend/src/api/tools.ts`:`approveToolCall(id)` / `denyToolCall(id)` / `listPendingToolCalls()` 三个 API client
+- 新增 `frontend/src/components/hitl/HitlConfirmPanel.tsx` + `.css`:glassmorphism modal,显示 `toolName + JSON.stringify(arguments) + 解释横幅 + Approve/Deny 双按钮`,Approve 点击后会有 "批准中…" loading,失败显示 error
+- `frontend/src/hooks/useStreamingChat.ts`:
+  - 接受第三个参数 `onToolCallPending` 回调
+  - 内部 `lastRequest` ref 记下最后一次 `(sessionId, userId, message)`
+  - 暴露 `resendWithApproval(approvedToolCallId)` 方法 → 用 `lastRequest` + `metadata.approvedToolCallId` 重发,**不再追加用户消息气泡**(treatAsResume=true,只追加 assistant placeholder)
+  - 暴露 `abort()` 方法,abort 时把 sending 设回 false 让 Composer 复原
+- `frontend/src/App.tsx`:
+  - 新增 `pendingToolCall` state + `setPendingToolCall` setter
+  - `useStreamingChat` 注入 `setPendingToolCall` 作为 `onToolCallPending` 回调
+  - `handleApprove(id)`:`await approveToolCall(id)` → 关 modal → `resendWithApproval(id)`
+  - `handleDeny(id)`:`await denyToolCall(id)` → 关 modal,**不重发**(LLM 已经在 awaiting 阶段消化了 observation)
+  - 把 `<HitlConfirmPanel pending=... onApprove=... onDeny=... />` 挂在 root
+  - `Composer` 拿到 `onAbort={abort}` prop
+- `Composer.tsx`:`sending && onAbort` 时切到红色 Stop button 调 onAbort,Square icon + 红色渐变(`linear-gradient(135deg, #ef4444, #b91c1c)`)
+- `Composer.css` 加 `.composer-send.composer-stop.ready` 样式
+
+**关键设计决策**
+
+1. **批准后自动重发,不让用户重打** — UX 上"我点批准"就应该等于"继续执行",中间多一步重打很违反直觉。`useStreamingChat.lastRequest` ref 记下原始请求,`resendWithApproval(id)` 用同样的 message + 加 `approvedToolCallId` metadata。后端 `ToolCallExecutor.checkApproval` consume → 真执行 → SSE complete。简历可挂"前端做了 stateless resume,后端只需要 token + chat 重发"。
+2. **`treatAsResume=true` 时不追加用户气泡** — ChatPanel 上不应该出现"用户问了两次同样的话"的视觉,只补一个 assistant placeholder 给 token 流回填。
+3. **Deny 路径不重发** — LLM 已经看到 `awaiting_approval` observation,在那一轮就生成了"我提议但等用户批准"的回答。Deny 后保留这个回答,不需要再 round-trip。如果用户希望 LLM 改用其他工具,他可以发新消息说"换 X 工具",这是 UX 选择。
+4. **Stop 按钮在 streaming 时替换 Send 按钮,不并排显示** — UI 简洁,功能不冲突(streaming 时 input disabled,无法发送,所以 Send 按钮无意义)。红色 + Square icon 是行业标配(ChatGPT/Claude 同款)。
+5. **`abort` 把 sending 设回 false + trace 切 idle** — 直接复原 UI 状态,用户立即能继续输入新消息。后端 SseEmitter 在客户端 abort 时会触发 onError → 走 catch → archive failure,不需要前端额外通知。
+6. **`onComplete` 补全 spans/traceId/retrievedSources** — T2 commit 加了字段 typing 但 chat.ts 的 reducer 没补全,结果前端拿到的 trace 永远 spans=[]。HL.b 顺便修这个 bug,SpanTree 现在能真显示数据了。简历叙事:"全栈一致性靠 schema 双向锁,这次 catch 了一个 typing-but-not-runtime 的死字段"。
+7. **HitlConfirmPanel 不强制覆盖 Composer** — 我用 `position: fixed; inset: 0` 全屏 overlay 而非 anchor 到 panel 旁,保证用户必须做决定才能继续。但 z-index 1000 不挡到原页面其他 modal。
+
+**改动文件**
+
+```
+新增   frontend/src/api/tools.ts                                    # approve/deny/list
+新增   frontend/src/components/hitl/HitlConfirmPanel.tsx
+新增   frontend/src/components/hitl/HitlConfirmPanel.css
+修改   frontend/src/types/events.ts                                 # +PendingToolCall +onToolCallPending
+修改   frontend/src/api/chat.ts                                     # tool_call_pending case + spans/traceId/retrievedSources fix
+修改   frontend/src/hooks/useStreamingChat.ts                       # +onToolCallPending +resendWithApproval +abort
+修改   frontend/src/App.tsx                                         # pending state + handlers + HitlConfirmPanel mount
+修改   frontend/src/components/composer/Composer.tsx                # +onAbort prop + Stop button
+修改   frontend/src/components/composer/Composer.css                # composer-stop 红色样式
+```
+
+测试:`npx tsc --noEmit` 干净,后端 mvn 104/104(没碰)。
+
+**怎么看效果**: 在 `application-local.yml` 打开 `react-enabled: true`,问 LLM "请把这条记录写进知识库:...";LLM 调用 `knowledge-write` 工具 → SSE 推 `tool_call_pending` → 前端弹 HitlConfirmPanel 显示工具名 + 参数 → 点 "批准并执行" → 后端 approve → 自动重发 with approvedToolCallId → 知识库真正写入,SSE 推完整 token + complete。如果点 "拒绝" → 后端 deny → modal 关闭,LLM 之前那句 "我提议但等批准" 的回答留在 chat 历史里。
+
+---
+
 ## 阶段 2 — 差异化亮点(待开始)
 
 7 个子任务,任挑两三个写进简历即可:
@@ -622,7 +679,7 @@ A-5 baseline 比对时打开此 flag,看那些 v1 检索 miss 的 case 是否被
 - ✅ Anthropic Contextual Retrieval + 真 BM25 + RRF — 见 CR-1 段落(CR-2 真 BM25 推迟)
 - ✅ Self-RAG / CRAG 检索充分性评估 — 见 SR 段落
 - ✅ Trace 升 span 树 + 前端 TraceTree(LangSmith 对标)— 见 T2 段落
-- ✅ HITL(Anthropic computer use 对标)— 见 HL.a 段落,前端 HL.b 待补
+- ✅ HITL(Anthropic computer use 对标)— 见 HL.a(后端)+ HL.b(前端)段落
 - MemGPT / Mem0 风格 memory(LLM 抽取 + add/update/merge + reflection)
 - MCP 客户端
 - HITL(@RequireApproval + SSE tool_call_pending)

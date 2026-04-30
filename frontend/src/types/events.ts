@@ -18,6 +18,13 @@ export interface SseErrorEvent {
   message: string;
 }
 
+export interface PendingToolCall {
+  pendingId: string;
+  toolName: string;
+  status: "AWAITING_APPROVAL";
+  arguments: Record<string, unknown>;
+}
+
 export type SseEvent = SseStartEvent | SseTokenEvent | SseCompleteEvent | SseErrorEvent;
 
 export interface StreamCallbacks {
@@ -25,4 +32,5 @@ export interface StreamCallbacks {
   onToken: (token: string) => void;
   onComplete: (trace: TraceInfo) => void;
   onError: (code: string, message: string) => void;
+  onToolCallPending?: (pending: PendingToolCall) => void;
 }

@@ -57,4 +57,8 @@
   color: white;
   box-shadow: 0 4px 12px rgba(56,189,248,0.3);
 }
+.composer-send.composer-stop.ready {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  box-shadow: 0 4px 12px rgba(239,68,68,0.3);
+}
 .composer-send:disabled { cursor: not-allowed; opacity: 0.5; }

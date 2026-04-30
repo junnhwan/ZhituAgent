@@ -71,6 +71,14 @@ export function streamChat(
             case "token":
               callbacks.onToken(payload.content);
               break;
+            case "tool_call_pending":
+              callbacks.onToolCallPending?.({
+                pendingId: payload.pendingId,
+                toolName: payload.toolName,
+                status: "AWAITING_APPROVAL",
+                arguments: (payload.arguments ?? {}) as Record<string, unknown>,
+              });
+              break;
             case "complete":
               settled = true;
               callbacks.onComplete({
@@ -90,6 +98,9 @@ export function streamChat(
                 factCount: payload.factCount ?? 0,
                 inputTokenEstimate: payload.inputTokenEstimate ?? 0,
                 outputTokenEstimate: payload.outputTokenEstimate ?? 0,
+                retrievedSources: payload.retrievedSources ?? [],
+                traceId: payload.traceId ?? "",
+                spans: payload.spans ?? [],
               } satisfies TraceInfo);
               break;
             case "error":

@@ -1,9 +1,15 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import "./Composer.css";
 
-export default function Composer({ sending, onSend }: { sending: boolean; onSend: (m: string) => void }) {
+interface ComposerProps {
+  sending: boolean;
+  onSend: (m: string) => void;
+  onAbort?: () => void;
+}
+
+export default function Composer({ sending, onSend, onAbort }: ComposerProps) {
   const [input, setInput] = useState("");
 
   const handleSend = useCallback(() => {
@@ -34,16 +40,29 @@ export default function Composer({ sending, onSend }: { sending: boolean; onSend
           onKeyDown={handleKey}
           disabled={sending}
         />
-        <motion.button
-          type="button"
-          className={`composer-send ${input.trim() && !sending ? "ready" : ""}`}
-          onClick={handleSend}
-          disabled={!input.trim() || sending}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-        >
-          <ArrowUp size={18} />
-        </motion.button>
+        {sending && onAbort ? (
+          <motion.button
+            type="button"
+            className="composer-send composer-stop ready"
+            onClick={onAbort}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            title="中止当前生成"
+          >
+            <Square size={16} />
+          </motion.button>
+        ) : (
+          <motion.button
+            type="button"
+            className={`composer-send ${input.trim() && !sending ? "ready" : ""}`}
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+          >
+            <ArrowUp size={18} />
+          </motion.button>
+        )}
       </div>
     </motion.div>
   );
