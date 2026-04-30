@@ -15,6 +15,7 @@ import com.zhituagent.orchestrator.RouteDecision;
 import com.zhituagent.rag.RetrievalMode;
 import com.zhituagent.rag.RetrievalRequestOptions;
 import com.zhituagent.session.SessionService;
+import com.zhituagent.trace.SpanCollector;
 import com.zhituagent.trace.TraceArchiveService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,7 @@ public class ChatService {
     private final ChatMetricsRecorder chatMetricsRecorder;
     private final ToolMetricsRecorder toolMetricsRecorder;
     private final TraceArchiveService traceArchiveService;
+    private final SpanCollector spanCollector;
     private final String systemPrompt;
 
     public ChatService(LlmRuntime llmRuntime,
@@ -52,6 +54,7 @@ public class ChatService {
                        ChatMetricsRecorder chatMetricsRecorder,
                        ToolMetricsRecorder toolMetricsRecorder,
                        TraceArchiveService traceArchiveService,
+                       SpanCollector spanCollector,
                        AppProperties appProperties,
                        ResourceLoader resourceLoader) throws IOException {
         this.llmRuntime = llmRuntime;
@@ -63,6 +66,7 @@ public class ChatService {
         this.chatMetricsRecorder = chatMetricsRecorder;
         this.toolMetricsRecorder = toolMetricsRecorder;
         this.traceArchiveService = traceArchiveService;
+        this.spanCollector = spanCollector;
         Resource resource = resourceLoader.getResource(appProperties.getSystemPromptLocation());
         this.systemPrompt = resource.getContentAsString(StandardCharsets.UTF_8);
     }
@@ -95,29 +99,59 @@ public class ChatService {
         RetrievalRequestOptions safeOptions = retrievalOptions == null ? RetrievalRequestOptions.defaults() : retrievalOptions;
         RouteDecision routeDecision = null;
         ContextBundle contextBundle = null;
+
+        spanCollector.beginTrace();
+        String rootSpan = spanCollector.startSpan("chat.turn", "request", Map.of(
+                "sessionId", sessionId == null ? "" : sessionId,
+                "requestId", requestId == null ? "" : requestId
+        ));
         try {
             sessionService.ensureSession(sessionId, userId);
             sessionService.appendMessage(sessionId, userId, "user", message);
 
-            routeDecision = agentOrchestrator.decide(message, safeOptions);
+            String routeSpan = spanCollector.startSpan("orchestrator.decide", "route");
+            try {
+                routeDecision = agentOrchestrator.decide(message, safeOptions);
+            } finally {
+                spanCollector.endSpan(routeSpan, "ok", Map.of(
+                        "path", routeDecision == null ? "direct-answer" : routeDecision.path(),
+                        "toolUsed", routeDecision != null && routeDecision.toolUsed(),
+                        "retrievalHit", routeDecision != null && routeDecision.retrievalHit()
+                ));
+            }
             recordToolMetric(routeDecision);
             logRouteDecision(requestId, sessionId, routeDecision);
 
-            contextBundle = contextManager.build(
-                    systemPrompt,
-                    memoryService.snapshot(sessionId),
-                    message,
-                    buildEvidenceBlock(routeDecision)
-            );
+            String contextSpan = spanCollector.startSpan("context.build", "context");
+            try {
+                contextBundle = contextManager.build(
+                        systemPrompt,
+                        memoryService.snapshot(sessionId),
+                        message,
+                        buildEvidenceBlock(routeDecision)
+                );
+            } finally {
+                spanCollector.endSpan(contextSpan, "ok", Map.of(
+                        "strategy", contextBundle == null ? "" : contextBundle.contextStrategy(),
+                        "factCount", contextBundle == null || contextBundle.facts() == null ? 0 : contextBundle.facts().size()
+                ));
+            }
 
-            String answer = llmRuntime.generate(
-                    systemPrompt,
-                    contextBundle.modelMessages(),
-                    safeMetadata
-            );
+            String llmSpan = spanCollector.startSpan("llm.generate", "llm");
+            String answer = "";
+            try {
+                answer = llmRuntime.generate(
+                        systemPrompt,
+                        contextBundle.modelMessages(),
+                        safeMetadata
+                );
+            } finally {
+                spanCollector.endSpan(llmSpan, "ok", Map.of("answerLength", answer == null ? 0 : answer.length()));
+            }
 
             sessionService.appendMessage(sessionId, userId, "assistant", answer);
             long latencyMs = elapsedMillis(startNanos);
+            spanCollector.endSpan(rootSpan, "ok", Map.of("latencyMs", latencyMs));
             TraceInfo traceInfo = chatTraceFactory.create(
                     routeDecision,
                     requestId,
@@ -151,6 +185,8 @@ public class ChatService {
         } catch (Exception exception) {
             long latencyMs = elapsedMillis(startNanos);
             String path = routeDecision == null ? "direct-answer" : routeDecision.path();
+            spanCollector.endSpan(rootSpan, "error", Map.of("error", String.valueOf(exception.getMessage())));
+            spanCollector.drain();
             log.error(
                     "对话失败 chat.failed sessionId={} path={} requestId={} message={}",
                     sessionId,

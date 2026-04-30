@@ -129,7 +129,9 @@ public class TraceArchiveService {
                 traceInfo.inputTokenEstimate(),
                 traceInfo.outputTokenEstimate(),
                 traceInfo.latencyMs(),
-                snippetEntries(routeDecision)
+                snippetEntries(routeDecision),
+                safe(traceInfo.traceId()),
+                traceInfo.spans()
         );
     }
 
@@ -181,7 +183,9 @@ public class TraceArchiveService {
                 tokenEstimator.estimateMessages(modelMessages),
                 tokenEstimator.estimateText(partialAnswer),
                 Math.max(0, latencyMs),
-                snippetEntries(routeDecision)
+                snippetEntries(routeDecision),
+                "",
+                List.of()
         );
     }
 

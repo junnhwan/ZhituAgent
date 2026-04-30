@@ -1,5 +1,7 @@
 package com.zhituagent.api.dto;
 
+import com.zhituagent.trace.Span;
+
 import java.util.List;
 
 public record TraceInfo(
@@ -19,10 +21,14 @@ public record TraceInfo(
         int factCount,
         long inputTokenEstimate,
         long outputTokenEstimate,
-        List<String> retrievedSources
+        List<String> retrievedSources,
+        String traceId,
+        List<Span> spans
 ) {
 
     public TraceInfo {
         retrievedSources = retrievedSources == null ? List.of() : List.copyOf(retrievedSources);
+        traceId = traceId == null ? "" : traceId;
+        spans = spans == null ? List.of() : List.copyOf(spans);
     }
 }

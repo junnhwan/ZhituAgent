@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.api.dto.ChatRequest;
 import com.zhituagent.api.dto.ChatResponse;
 import com.zhituagent.api.dto.TraceInfo;
+import com.zhituagent.api.sse.SseEventType;
 import com.zhituagent.chat.ChatService;
 import com.zhituagent.config.AppProperties;
 import com.zhituagent.context.ContextBundle;
@@ -116,7 +117,7 @@ public class ChatController {
             StringBuilder answerBuilder = new StringBuilder();
             try {
                 emitter.send(SseEmitter.event()
-                        .name("start")
+                        .name(SseEventType.START.value())
                         .data(writeJson(Map.of("sessionId", request.sessionId()))));
 
                 llmRuntime.stream(
@@ -127,7 +128,7 @@ public class ChatController {
                             answerBuilder.append(token);
                             try {
                                 emitter.send(SseEmitter.event()
-                                        .name("token")
+                                        .name(SseEventType.TOKEN.value())
                                         .data(writeJson(Map.of("content", token))));
                             } catch (IOException exception) {
                                 throw new IllegalStateException(exception);
@@ -167,7 +168,7 @@ public class ChatController {
                                 );
                                 chatMetricsRecorder.recordRequest(routeDecision.path(), true, true, latencyMs);
                                 emitter.send(SseEmitter.event()
-                                        .name("complete")
+                                        .name(SseEventType.COMPLETE.value())
                                         .data(writeJson(traceInfo)));
                                 emitter.complete();
                             } catch (IOException exception) {
@@ -201,7 +202,7 @@ public class ChatController {
                 );
                 try {
                     emitter.send(SseEmitter.event()
-                            .name("error")
+                            .name(SseEventType.ERROR.value())
                             .data(writeJson(Map.of("code", "INTERNAL_ERROR", "message", exception.getMessage()))));
                 } catch (IOException ignored) {
                     // Ignore secondary streaming errors.

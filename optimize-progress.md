@@ -333,6 +333,47 @@ mvn -o spring-boot:run \
 
 ---
 
+### T1 ✅ Span 树 + SseEventType 枚举(后端)(2026-04-30 完成)
+
+**做了什么**
+
+把"扁平 KV trace"升级到"父子 span 树",并把 SSE 事件名从字符串字面量收紧到枚举:
+
+- 新增 `trace/Span` record:`{spanId, parentSpanId, traceId, name, kind, startEpochMillis, endEpochMillis, status, attributes}` —— 直接对齐 OpenTelemetry / LangSmith run tree 的 schema 形态
+- 新增 `trace/SpanCollector` 请求作用域 bean:`ThreadLocal` 持有当前 traceId + 开放栈 + completed 列表;支持嵌套 span,自动关联 parentSpanId;`drain()` 取出全部并清 ThreadLocal,未关闭的 span 标 "incomplete" 兜底
+- 新增 `api/sse/SseEventType` 枚举:除了原有 `start/token/complete/error`,预留了 `span_start / span_end / retrieval_step / tool_start / tool_end / thinking_delta / tool_call_pending / tool_call_resolved` 8 个未来事件类型
+- `TraceInfo` 加 `traceId` + `spans: List<Span>` 字段(向后兼容)
+- `TraceArchiveEntry` 加 `traceId` + `spans` 字段(JSONL 归档随之带 span 树)
+- `ChatTraceFactory` 调 `spanCollector.drain()` 把 span 树注入 `TraceInfo`
+- `ChatService.chat()` 起 root span(`chat.turn` / kind=request)+ 3 个子 span(`orchestrator.decide` / `context.build` / `llm.generate`),失败路径也在 catch 里 `endSpan + drain`
+
+**关键设计决策**
+
+1. **ThreadLocal 而非 Spring 请求作用域 bean** —— 请求作用域 bean 在 `@Async` 子线程不可见,而 ThreadLocal 有同样问题但更轻量。当前 chat() 是单线程同步的;ToolCallExecutor 的并行 fan-out 在 `.join()` 之后才回到主线程,需要 SG 阶段补丁(把 spanContext 传到子线程)。T1 暂不做。
+2. **未关闭 span 兜底为 "incomplete"** —— `drain()` 自动给所有还在栈里的 span 补 endTs + status=incomplete。这保证 trace 树不会出现"半开放节点",前端可视化时永远是良构 DAG。
+3. **`SseEventType` 一次性把所有未来事件枚举登记** —— 即使现在 `span_start` 还没真实发出去(streamChat 路径还没插桩),提前把 enum 名占好,SG/HL/T2 加事件时一行 `SseEventType.SPAN_START.value()` 即可,不会再修 enum。简历可挂"我用 enum 把 SSE 协议契约固化,前后端类型可以镜像"。
+4. **span attributes 是 Map<String, Object>** —— 给后续节点(retrieval / tool)放任意结构化数据(snippet count / tool name / arg hash),前端 SpanTree 可挂 detail panel。
+5. **ChatTraceFactory 通过构造器加可选 SpanCollector** —— 老的无参构造器和单参构造器保留,旧测试不破坏(给一个 fresh SpanCollector 即可,drain 空列表)。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/trace/Span.java
+新增   src/main/java/com/zhituagent/trace/SpanCollector.java
+新增   src/main/java/com/zhituagent/api/sse/SseEventType.java
+修改   src/main/java/com/zhituagent/api/dto/TraceInfo.java          # +traceId +spans
+修改   src/main/java/com/zhituagent/trace/TraceArchiveEntry.java    # +traceId +spans
+修改   src/main/java/com/zhituagent/trace/TraceArchiveService.java  # 写 traceId+spans
+修改   src/main/java/com/zhituagent/api/ChatTraceFactory.java       # 注入 SpanCollector
+修改   src/main/java/com/zhituagent/chat/ChatService.java           # 4 个 span(root/route/context/llm)
+修改   src/main/java/com/zhituagent/api/ChatController.java         # 字符串 → SseEventType.value()
+新增   src/test/java/com/zhituagent/trace/SpanCollectorTest.java
+```
+
+测试:`mvn -o test` 57/57 全绿(+2 新)。
+
+---
+
 ## 阶段 2 — 差异化亮点(待开始)
 
 7 个子任务,任挑两三个写进简历即可:

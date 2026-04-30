@@ -5,6 +5,8 @@ import com.zhituagent.context.ContextBundle;
 import com.zhituagent.context.TokenEstimator;
 import com.zhituagent.orchestrator.RouteDecision;
 import com.zhituagent.rag.KnowledgeSnippet;
+import com.zhituagent.trace.Span;
+import com.zhituagent.trace.SpanCollector;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -17,13 +19,19 @@ public class ChatTraceFactory {
     private static final String CONTEXT_STRATEGY = "recent-summary";
     private static final String DEFAULT_RERANK_MODEL = "";
     private final TokenEstimator tokenEstimator;
+    private final SpanCollector spanCollector;
 
     public ChatTraceFactory() {
-        this(new TokenEstimator());
+        this(new TokenEstimator(), new SpanCollector());
     }
 
-    ChatTraceFactory(TokenEstimator tokenEstimator) {
+    public ChatTraceFactory(SpanCollector spanCollector) {
+        this(new TokenEstimator(), spanCollector);
+    }
+
+    ChatTraceFactory(TokenEstimator tokenEstimator, SpanCollector spanCollector) {
         this.tokenEstimator = tokenEstimator;
+        this.spanCollector = spanCollector;
     }
 
     public TraceInfo create(RouteDecision routeDecision,
@@ -41,6 +49,9 @@ public class ChatTraceFactory {
         List<String> retrievedSources = snippets.stream()
                 .map(KnowledgeSnippet::source)
                 .toList();
+
+        String traceId = spanCollector.currentTraceId();
+        List<Span> spans = spanCollector.drain();
 
         return new TraceInfo(
                 routeDecision == null ? DEFAULT_PATH : routeDecision.path(),
@@ -61,7 +72,9 @@ public class ChatTraceFactory {
                 contextBundle == null || contextBundle.facts() == null ? 0 : Math.max(0, contextBundle.facts().size()),
                 inputTokenEstimate,
                 outputTokenEstimate,
-                retrievedSources
+                retrievedSources,
+                traceId == null ? "" : traceId,
+                spans
         );
     }
 

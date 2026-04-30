@@ -28,8 +28,15 @@ public record TraceArchiveEntry(
         long inputTokenEstimate,
         long outputTokenEstimate,
         long latencyMs,
-        List<SnippetTraceEntry> snippets
+        List<SnippetTraceEntry> snippets,
+        String traceId,
+        List<Span> spans
 ) {
+
+    public TraceArchiveEntry {
+        traceId = traceId == null ? "" : traceId;
+        spans = spans == null ? List.of() : List.copyOf(spans);
+    }
 
     public record SnippetTraceEntry(
             String source,
