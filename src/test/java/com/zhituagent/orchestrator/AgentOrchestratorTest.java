@@ -36,6 +36,7 @@ class AgentOrchestratorTest {
                 ragRetriever,
                 toolRegistry,
                 new TimeKeywordStubLlm(),
+                new ToolCallExecutor(toolRegistry),
                 "test-system-prompt"
         );
 

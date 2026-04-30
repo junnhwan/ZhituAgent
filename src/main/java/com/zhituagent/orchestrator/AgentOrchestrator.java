@@ -7,12 +7,8 @@ import com.zhituagent.rag.RagRetrievalResult;
 import com.zhituagent.rag.RagRetriever;
 import com.zhituagent.rag.RetrievalMode;
 import com.zhituagent.rag.RetrievalRequestOptions;
-import com.zhituagent.tool.ToolDefinition;
 import com.zhituagent.tool.ToolRegistry;
 import com.zhituagent.tool.ToolResult;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,24 +27,24 @@ import java.util.Map;
 public class AgentOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(AgentOrchestrator.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, Object>> ARG_MAP_TYPE = new TypeReference<>() {
-    };
 
     private final RagRetriever ragRetriever;
     private final ToolRegistry toolRegistry;
     private final LlmRuntime llmRuntime;
+    private final ToolCallExecutor toolCallExecutor;
     private final String systemPrompt;
 
     @Autowired
     public AgentOrchestrator(RagRetriever ragRetriever,
                              ToolRegistry toolRegistry,
                              LlmRuntime llmRuntime,
+                             ToolCallExecutor toolCallExecutor,
                              AppProperties appProperties,
                              ResourceLoader resourceLoader) throws IOException {
         this.ragRetriever = ragRetriever;
         this.toolRegistry = toolRegistry;
         this.llmRuntime = llmRuntime;
+        this.toolCallExecutor = toolCallExecutor;
         Resource resource = resourceLoader.getResource(appProperties.getSystemPromptLocation());
         this.systemPrompt = resource.getContentAsString(StandardCharsets.UTF_8);
     }
@@ -56,10 +52,12 @@ public class AgentOrchestrator {
     AgentOrchestrator(RagRetriever ragRetriever,
                       ToolRegistry toolRegistry,
                       LlmRuntime llmRuntime,
+                      ToolCallExecutor toolCallExecutor,
                       String systemPrompt) {
         this.ragRetriever = ragRetriever;
         this.toolRegistry = toolRegistry;
         this.llmRuntime = llmRuntime;
+        this.toolCallExecutor = toolCallExecutor;
         this.systemPrompt = systemPrompt;
     }
 
@@ -92,37 +90,34 @@ public class AgentOrchestrator {
             return RouteDecision.direct();
         }
 
-        ToolExecutionRequest request = turn.toolCalls().get(0);
-        return executeToolCall(request);
-    }
-
-    private RouteDecision executeToolCall(ToolExecutionRequest request) {
-        String toolName = request.name();
-        ToolDefinition tool = toolRegistry.find(toolName).orElse(null);
-        if (tool == null) {
-            log.warn("LLM 选择了未注册工具 chat.tool.unknown name={} arguments={}", toolName, request.arguments());
+        List<ToolCallExecutor.ToolExecution> executions = toolCallExecutor.executeAll(turn.toolCalls());
+        if (executions.isEmpty()) {
             return RouteDecision.direct();
         }
-        Map<String, Object> arguments = parseArguments(request.arguments());
-        try {
-            ToolResult result = tool.execute(arguments);
-            return RouteDecision.tool(toolName, result);
-        } catch (RuntimeException exception) {
-            log.error("工具执行失败 chat.tool.failed name={} message={}", toolName, exception.getMessage());
-            ToolResult failure = new ToolResult(toolName, false, "tool execution failed: " + exception.getMessage(), Map.of());
-            return RouteDecision.tool(toolName, failure);
-        }
+
+        ToolResult aggregate = aggregate(executions);
+        String firstName = executions.get(0).result().toolName();
+        return RouteDecision.tool(firstName, aggregate);
     }
 
-    private Map<String, Object> parseArguments(String json) {
-        if (json == null || json.isBlank()) {
-            return new HashMap<>();
+    private ToolResult aggregate(List<ToolCallExecutor.ToolExecution> executions) {
+        if (executions.size() == 1) {
+            return executions.get(0).result();
         }
-        try {
-            return OBJECT_MAPPER.readValue(json, ARG_MAP_TYPE);
-        } catch (Exception exception) {
-            log.warn("工具参数 JSON 解析失败 chat.tool.arg_parse_failed raw={} message={}", json, exception.getMessage());
-            return new HashMap<>();
+        boolean allOk = executions.stream().allMatch(execution -> execution.result().success());
+        StringBuilder summary = new StringBuilder();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        for (ToolCallExecutor.ToolExecution execution : executions) {
+            ToolResult result = execution.result();
+            summary.append("[").append(result.toolName()).append("] ").append(result.summary()).append("\n");
+            payload.put(result.toolName(), Map.of(
+                    "success", result.success(),
+                    "summary", result.summary(),
+                    "payload", result.payload()
+            ));
         }
+        log.info("多工具并行执行 chat.tool.parallel toolCount={} allSuccess={}", executions.size(), allOk);
+        String trimmedSummary = summary.toString().trim();
+        return new ToolResult("multi-tool", allOk, trimmedSummary, payload);
     }
 }

@@ -158,7 +158,7 @@ mvn -o spring-boot:run \
 5 个子任务:
 - A-1: ✅ `ToolDefinition` 加 `description` + JSON Schema (LangChain4j `ToolSpecification`)
 - A-2: ✅ `ChatLanguageModel` 真 function calling 改造,删除 `looksLikeTimeQuestion` 关键词路由
-- A-3: tool_calls 并行执行 + 错误回退到 observation
+- A-3: ✅ tool_calls 并行执行 + 错误回退到 observation
 - A-4: 错误恢复三件套(Retry / schema 校验 / observation 重投)
 - A-5: 跑 v2 评测对比 v1
 
@@ -241,6 +241,44 @@ mvn -o spring-boot:run \
 ```
 
 测试:`mvn -o test` 50/50 全绿。
+
+---
+
+### A-3 ✅ 并行 tool 执行 + observation 回退(2026-04-30 完成)
+
+**做了什么**
+
+把"LLM 输出多个 toolCalls 时只跑第一个、且任一工具抛异常即整轮 chat 失败"改成"全部并行跑、失败转成 observation 回投":
+
+- 新增 `orchestrator/ToolCallExecutor` Spring bean
+  - 内部 4 线程 `tool-exec-*` `FixedThreadPool` + 守护线程
+  - `executeAll(List<ToolExecutionRequest>)` 用 `CompletableFuture.allOf` 并行触发,返回 `List<ToolExecution>`(每条 = `{ToolExecutionRequest, ToolResult}`)
+  - 工具异常:`catch RuntimeException` 包成 `ToolResult.success=false, summary=tool execution failed: ...`,**不抛**
+  - 未注册工具:返回 `ToolResult.success=false, summary=tool not registered: <name>`(避免 LLM 幻觉式工具名让 chat 崩盘)
+  - 参数 JSON 解析失败:warn log + 空 map 兜底
+  - `@PreDestroy` 关线程池
+- `AgentOrchestrator` 把单 toolCall 处理逻辑全部下沉到 `ToolCallExecutor`,本身只负责:
+  - 多个工具结果聚合 → `aggregate(List<ToolExecution>)`:N=1 直接返回原 `ToolResult`;N>1 拼成 `ToolResult("multi-tool", allSuccess, "[name1] sum1\n[name2] sum2", payload={name → {success,summary,payload}})`
+  - 这样 `RouteDecision.tool` 单一形状不变,ChatService 仍只看到一个 `toolName/toolResult`,evidence block 仍走 `TOOL RESULT: ...` 注入
+
+**关键设计决策**
+
+1. **保 `RouteDecision.tool` 单一形状,不破契约** —— 多工具结果聚合到 `multi-tool` 复合 result。Trace / archive / SSE / metrics 全套不动。简历可挂"用 `payload` map 携带多工具明细"作为后续 trace 树升级的伏笔。
+2. **Failure-as-observation 而非 throw** —— 这是 OpenAI cookbook + Anthropic tool use 推荐的 robustness 写法。LLM 在多轮里能看到失败原因并改写参数;A-4 retry 与 A-5 ReAct 循环都依赖这个语义。
+3. **`CompletableFuture.allOf(...).join()` 而非 `.get(timeout)`** —— 当前没全局超时(单工具超时由工具自己处理)。A-4 引入 spring-retry / `@Timed` 时再补 per-tool timeout。
+4. **未注册工具返回失败 result 而非 RouteDecision.direct** —— 这样 LLM 会在 observation 里看到"tool not registered: foo",下一轮可以纠正。比 direct 兜底更有教学价值。
+5. **测试覆盖三种 observation** —— 新增 `ToolCallExecutorTest` 用 `CountDownLatch` 验证 fast-tool 与 slow-tool 真的并发(各自 start_order 都被记录),boom-tool 转成 success=false summary 含 "simulated tool failure",ghost-tool 不在 registry 里转成 "tool not registered"。这就是简历讲并行 + 失败回退 的 demo。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/orchestrator/ToolCallExecutor.java
+修改   src/main/java/com/zhituagent/orchestrator/AgentOrchestrator.java   # 用 ToolCallExecutor + aggregate
+新增   src/test/java/com/zhituagent/orchestrator/ToolCallExecutorTest.java # 并行 + 三种失败回退
+修改   src/test/java/com/zhituagent/orchestrator/AgentOrchestratorTest.java  # 注入 ToolCallExecutor
+```
+
+测试:`mvn -o test` 52/52 全绿(+2 新)。
 
 ---
 
