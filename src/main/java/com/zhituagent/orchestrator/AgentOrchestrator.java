@@ -7,6 +7,7 @@ import com.zhituagent.rag.RagRetrievalResult;
 import com.zhituagent.rag.RagRetriever;
 import com.zhituagent.rag.RetrievalMode;
 import com.zhituagent.rag.RetrievalRequestOptions;
+import com.zhituagent.rag.SelfRagOrchestrator;
 import com.zhituagent.tool.ToolRegistry;
 import com.zhituagent.tool.ToolResult;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -29,6 +30,7 @@ public class AgentOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(AgentOrchestrator.class);
 
     private final RagRetriever ragRetriever;
+    private final SelfRagOrchestrator selfRagOrchestrator;
     private final ToolRegistry toolRegistry;
     private final LlmRuntime llmRuntime;
     private final ToolCallExecutor toolCallExecutor;
@@ -36,12 +38,14 @@ public class AgentOrchestrator {
 
     @Autowired
     public AgentOrchestrator(RagRetriever ragRetriever,
+                             SelfRagOrchestrator selfRagOrchestrator,
                              ToolRegistry toolRegistry,
                              LlmRuntime llmRuntime,
                              ToolCallExecutor toolCallExecutor,
                              AppProperties appProperties,
                              ResourceLoader resourceLoader) throws IOException {
         this.ragRetriever = ragRetriever;
+        this.selfRagOrchestrator = selfRagOrchestrator;
         this.toolRegistry = toolRegistry;
         this.llmRuntime = llmRuntime;
         this.toolCallExecutor = toolCallExecutor;
@@ -54,7 +58,17 @@ public class AgentOrchestrator {
                       LlmRuntime llmRuntime,
                       ToolCallExecutor toolCallExecutor,
                       String systemPrompt) {
+        this(ragRetriever, null, toolRegistry, llmRuntime, toolCallExecutor, systemPrompt);
+    }
+
+    AgentOrchestrator(RagRetriever ragRetriever,
+                      SelfRagOrchestrator selfRagOrchestrator,
+                      ToolRegistry toolRegistry,
+                      LlmRuntime llmRuntime,
+                      ToolCallExecutor toolCallExecutor,
+                      String systemPrompt) {
         this.ragRetriever = ragRetriever;
+        this.selfRagOrchestrator = selfRagOrchestrator;
         this.toolRegistry = toolRegistry;
         this.llmRuntime = llmRuntime;
         this.toolCallExecutor = toolCallExecutor;
@@ -70,7 +84,7 @@ public class AgentOrchestrator {
     }
 
     public RouteDecision decide(String userMessage, RetrievalRequestOptions retrievalOptions) {
-        RagRetrievalResult retrievalResult = ragRetriever.retrieveDetailed(userMessage, 3, retrievalOptions);
+        RagRetrievalResult retrievalResult = retrieveWithOptionalSelfRag(userMessage, retrievalOptions);
         if (!retrievalResult.snippets().isEmpty()) {
             return RouteDecision.retrieval(retrievalResult);
         }
@@ -98,6 +112,13 @@ public class AgentOrchestrator {
         ToolResult aggregate = aggregate(executions);
         String firstName = executions.get(0).result().toolName();
         return RouteDecision.tool(firstName, aggregate);
+    }
+
+    private RagRetrievalResult retrieveWithOptionalSelfRag(String userMessage, RetrievalRequestOptions retrievalOptions) {
+        if (selfRagOrchestrator != null && selfRagOrchestrator.isEnabled()) {
+            return selfRagOrchestrator.retrieveWithRefinement(userMessage, 3, retrievalOptions);
+        }
+        return ragRetriever.retrieveDetailed(userMessage, 3, retrievalOptions);
     }
 
     private ToolResult aggregate(List<ToolCallExecutor.ToolExecution> executions) {

@@ -10,6 +10,8 @@ public class RagProperties {
     private double minAcceptedScore = 0.15;
     private boolean contextualEnabled = false;
     private String fusionStrategy = "linear";
+    private boolean selfRagEnabled = false;
+    private int selfRagMaxRewrites = 2;
 
     public boolean isHybridEnabled() {
         return hybridEnabled;
@@ -49,5 +51,21 @@ public class RagProperties {
 
     public void setFusionStrategy(String fusionStrategy) {
         this.fusionStrategy = fusionStrategy;
+    }
+
+    public boolean isSelfRagEnabled() {
+        return selfRagEnabled;
+    }
+
+    public void setSelfRagEnabled(boolean selfRagEnabled) {
+        this.selfRagEnabled = selfRagEnabled;
+    }
+
+    public int getSelfRagMaxRewrites() {
+        return selfRagMaxRewrites;
+    }
+
+    public void setSelfRagMaxRewrites(int selfRagMaxRewrites) {
+        this.selfRagMaxRewrites = selfRagMaxRewrites;
     }
 }

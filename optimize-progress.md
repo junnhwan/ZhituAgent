@@ -471,12 +471,65 @@ A-5 跑 v2 baseline 时所有三件套同时启用,与 v1 对比表的"对照量
 
 ---
 
+### SR ✅ Self-RAG 评估 + query 改写(2026-04-30 完成)
+
+**做了什么**
+
+把"检索一次就交差"升级到"LLM 评判检索是否充分,不充分则改写 query 重检索",最多 2 次。基于 Asai et al. 2023 的 Self-RAG 范式 + Yan et al. 2024 的 CRAG 思想。
+
+- 新增 `rag/SelfRagDecision` record:`{sufficient, rewrittenQuery, reason}`,`sufficient`/`insufficient` 静态工厂语义清晰。
+- 新增 `rag/SelfRagOrchestrator` (@Component,Strategy/Decorator pattern):
+  - 注入 `RagRetriever + LlmRuntime + RagProperties + SpanCollector`
+  - `retrieveWithRefinement(query, limit, options)`:先正常检索;开关 ON 且 maxRewrites>0 时,进入 LLM 评判 loop
+  - LLM prompt 让模型回答严格 JSON `{"sufficient": <bool>, "rewrite": "<alternate query if not sufficient>"}`
+  - 不充分 → 用 rewrite 重检索,最多 N 次
+  - 触顶仍未 sufficient → `pickBest()` 返回 top-1 score 最高的那一轮,**不返回最后一轮(防止越改越差)**
+  - 失败模式:LLM throw / 返回空 / JSON 解析失败 → 回退 `sufficient=true`,**永不死循环**
+  - LLM 包 ```json\n{...}\n``` 的 markdown fence 自动 strip
+  - 同一 rewrite == 原 query(LLM 不思考)→ 立即停止
+  - 每轮起一个 `rag.self_rag.iter` span 带 iteration / next_query / decision 属性,与 SG 的 agent.iter span 对称
+- `RagProperties` 加 `selfRagEnabled=false` (默认关) + `selfRagMaxRewrites=2`
+- `AgentOrchestrator.decide()`:抽 `retrieveWithOptionalSelfRag(...)` 私有方法,根据 `selfRagOrchestrator.isEnabled()` 分发到 SelfRagOrchestrator 或直接走 RagRetriever。AgentOrchestrator 加 6-arg 测试构造器接受 SelfRagOrchestrator(可空),5-arg 老构造器 delegate 到 6-arg 传 null,旧测试不破。
+
+**关键设计决策**
+
+1. **Strategy/Decorator 而非内嵌 RagRetriever** — RagRetriever 仍只负责"一次检索"职责,SelfRagOrchestrator 是 decorator 包装,层级清晰。简历可挂"用 decorator pattern 把 LLM 评判旁路化,RAG 链路单元可独立替换"。
+2. **`pickBest` 返回最高 top-score 那一轮** — Self-RAG 论文里 LLM 评判可能误判(尤其 mock/小模型),如果不充分但 retrieve 已经命中 gold doc,我们让分数说话;CRAG 也强调"refine 不一定 monotonic"。代价:如果分数 calibration 跨 query 不一致,这条 fallback 可能选错;但比"返回最后一轮"安全得多。
+3. **LLM 失败 = sufficient,不是 insufficient** — 反直觉但正确:Self-RAG 的失败模式是 LLM stalling 或 timeout,如果失败时假设 insufficient 会触发 rewrite → 继续 stalling,死循环。失败时 假设 sufficient 让外层流程拿到原始 retrieval,降级体验比死循环好。
+4. **JSON 严格解析 + markdown fence 兼容** — GLM-5.1 / Claude / GPT 都偶尔会包 ```json``` fence。`stripMarkdownFence()` 一行搞定;主路径仍要求严格 JSON,失败回退到 sufficient。简历可挂"我已经知道国产 LLM 在 JSON output 上的边界 case,默认有 fence 处理"。
+5. **rewrite == 原 query 的早退检测** — LLM 标 `sufficient=false` 但又给出和原 query 一样的 `rewrite`,实际是它无法想出更好的方法。直接退出循环避免无意义重检索。
+6. **`@Autowired` + 单参备选构造器** — Spring 注入 4-arg(含 SpanCollector),测试 3-arg(自己 new SpanCollector)。SelfRag 在没 active trace 时 `startSpan` 返回 null + `endSpan(null,...)` no-op,所以单测不必先 `beginTrace()`。
+7. **空初始 retrieval 不走 LLM** — `evaluate()` 入口判 `result.snippets().isEmpty()` 直接 short-circuit 为 insufficient。这避免给 LLM 喂"评估这 0 个 snippet"的废话,省 1 次 LLM call。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/rag/SelfRagDecision.java
+新增   src/main/java/com/zhituagent/rag/SelfRagOrchestrator.java
+修改   src/main/java/com/zhituagent/config/RagProperties.java               # +selfRagEnabled+selfRagMaxRewrites
+修改   src/main/java/com/zhituagent/orchestrator/AgentOrchestrator.java     # 注入 SelfRag + 分发 decide
+新增   src/test/java/com/zhituagent/rag/SelfRagOrchestratorTest.java        # 9 cases
+```
+
+测试:`mvn -o test` 89/89 全绿(+9 新)。
+
+**怎么开 v2**: `application-local.yml` 加:
+```yaml
+zhitu:
+  rag:
+    self-rag-enabled: true
+    self-rag-max-rewrites: 2
+```
+A-5 baseline 比对时打开此 flag,看那些 v1 检索 miss 的 case 是否被 LLM-driven rewrite 救回。
+
+---
+
 ## 阶段 2 — 差异化亮点(待开始)
 
 7 个子任务,任挑两三个写进简历即可:
 - ✅ ReAct/StateGraph 循环(LangGraph 对标)— 见 SG 段落
 - ✅ Anthropic Contextual Retrieval + 真 BM25 + RRF — 见 CR-1 段落(CR-2 真 BM25 推迟)
-- Self-RAG / CRAG 检索充分性评估
+- ✅ Self-RAG / CRAG 检索充分性评估 — 见 SR 段落
 - MemGPT / Mem0 风格 memory(LLM 抽取 + add/update/merge + reflection)
 - MCP 客户端
 - HITL(@RequireApproval + SSE tool_call_pending)
