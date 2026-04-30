@@ -1,5 +1,7 @@
 package com.zhituagent.llm;
 
+import dev.langchain4j.agent.tool.ToolSpecification;
+
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -13,4 +15,11 @@ public interface LlmRuntime {
                 Map<String, Object> metadata,
                 Consumer<String> onToken,
                 Runnable onComplete);
+
+    default ChatTurnResult generateWithTools(String systemPrompt,
+                                             List<String> messages,
+                                             List<ToolSpecification> tools,
+                                             Map<String, Object> metadata) {
+        return ChatTurnResult.ofText(generate(systemPrompt, messages, metadata));
+    }
 }

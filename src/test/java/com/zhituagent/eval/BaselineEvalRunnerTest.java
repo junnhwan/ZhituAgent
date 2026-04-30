@@ -3,8 +3,11 @@ package com.zhituagent.eval;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.ZhituAgentApplication;
+import com.zhituagent.llm.ChatTurnResult;
 import com.zhituagent.llm.LlmRuntime;
 import com.zhituagent.rag.RerankClient;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -71,6 +74,23 @@ class BaselineEvalRunnerTest {
                                    Runnable onComplete) {
                     onToken.accept("Mock stream");
                     onComplete.run();
+                }
+
+                @Override
+                public ChatTurnResult generateWithTools(String systemPrompt,
+                                                        List<String> messages,
+                                                        List<ToolSpecification> tools,
+                                                        Map<String, Object> metadata) {
+                    String last = messages.isEmpty() ? "" : messages.get(messages.size() - 1).toLowerCase();
+                    boolean timeAvailable = tools != null && tools.stream().anyMatch(t -> "time".equals(t.name()));
+                    boolean timeIntent = last.contains("几点") || last.contains("星期几") || last.contains("周几")
+                            || last.contains("几号") || last.contains("日期") || last.contains("time") || last.contains("date");
+                    if (timeAvailable && timeIntent) {
+                        return ChatTurnResult.ofToolCalls(List.of(
+                                ToolExecutionRequest.builder().id("test-time").name("time").arguments("{}").build()
+                        ));
+                    }
+                    return ChatTurnResult.ofText(generate(systemPrompt, messages, metadata));
                 }
             };
         }

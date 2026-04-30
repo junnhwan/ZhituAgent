@@ -157,7 +157,7 @@ mvn -o spring-boot:run \
 
 5 个子任务:
 - A-1: ✅ `ToolDefinition` 加 `description` + JSON Schema (LangChain4j `ToolSpecification`)
-- A-2: `ChatLanguageModel` 真 function calling 改造,删除 `looksLikeTimeQuestion` 关键词路由
+- A-2: ✅ `ChatLanguageModel` 真 function calling 改造,删除 `looksLikeTimeQuestion` 关键词路由
 - A-3: tool_calls 并行执行 + 错误回退到 observation
 - A-4: 错误恢复三件套(Retry / schema 校验 / observation 重投)
 - A-5: 跑 v2 评测对比 v1
@@ -197,6 +197,50 @@ mvn -o spring-boot:run \
 ```
 
 测试:`mvn -o test` 50/50 全绿(+1 新)。
+
+---
+
+### A-2 ✅ 真 function calling(2026-04-30 完成)
+
+**做了什么**
+
+把"`AgentOrchestrator` 内的 `looksLikeTimeQuestion` 关键词 if-else 路由"换成"真正的 LangChain4j function calling":
+
+- 新增 `llm/ChatTurnResult` record:`{text, List<ToolExecutionRequest> toolCalls}` —— LLM 一轮可能输出 text 也可能输出 toolCalls
+- `LlmRuntime` 接口加 default 方法 `generateWithTools(systemPrompt, messages, tools, metadata)` —— 默认 fallback 到 `generate(...)` 仅返回 text(向后兼容)
+- `LangChain4jLlmRuntime.generateWithTools` 真路径用 `ChatRequest.builder().toolSpecifications(specs).build()` + `ChatModel.chat(ChatRequest)`,从返回的 `AiMessage.toolExecutionRequests()` 解析 toolCalls
+- Mock 路径(本地无 API key 时)通过中文/英文时间关键词模拟 LLM 输出 `time` 工具调用,保留测试可观测性
+- `AgentOrchestrator.decide()`:删除 `looksLikeTimeQuestion`,流程改为
+  1. 先做 RAG 检索 → 命中即 `RouteDecision.retrieval`
+  2. 否则调 `llmRuntime.generateWithTools(systemPrompt, [USER:msg], specs)` 让 LLM 决定工具
+  3. LLM 输出 toolCalls → 解析参数 JSON → 执行 → `RouteDecision.tool`
+  4. 否则 `RouteDecision.direct`
+- `AgentOrchestrator` 注入 `LlmRuntime` + `AppProperties` + `ResourceLoader`,加载 system prompt 一同喂给工具决策模型
+- 工具参数 JSON 用 Jackson `ObjectMapper.readValue(..., Map<String, Object>)` 解析,失败容错为空 map
+
+**关键设计决策**
+
+1. **Default 方法兜底,不破坏现有 LlmRuntime 实现** —— 旧 stub 不实现 `generateWithTools` 会自动 fallback 到 `generate(...)` 返回 text(toolCalls 为空),不是编译错误。新功能渐进引入。
+2. **decide-with-LLM,不改 ChatService** —— `AgentOrchestrator.decide()` 内部多调一次 LLM 决定工具,但 `ChatService.chat()` 仍只看到 `RouteDecision`(retrieval/tool/direct),evidence block 通过 `TOOL RESULT: ...` 注入给最终生成。代价是每个非 RAG 请求 +1 次 LLM call,收益是 ChatService 流程不变,trace/SSE/error path 全部不动。
+3. **Mock LLM 关键词模拟** —— stub 模式下,LangChain4jLlmRuntime / 测试 stub 都识别"几点/星期几/周几/几号/日期/time/date"等关键词,模拟真 LLM 会输出 `time` 工具调用的行为。这样所有 fixture 测试无需真 API key 就能验证 function calling 路径,简历也可挂"我有一套不依赖外部 API 的 fixture 验证 LLM 工具选择"。
+4. **公开 5-arg `@Autowired` 构造器 + 包级 4-arg 测试构造器** —— Spring 看到 `@Autowired` 标注挑公开构造器,测试用 4-arg 注入 stub。比改 LlmRuntime 接口或 mock Spring context 简洁。
+5. **Tool 选择只用单条 USER message,不带 history/summary** —— 节省 input token。代价:LLM 看不到 session 上下文,可能在多轮时漏掉工具机会。下一步 ReAct 改造里会让循环节点能复用历史。
+6. **未注册工具兼容** —— LLM 幻觉式输出未注册工具名时,降级为 `RouteDecision.direct()` 不抛异常,只 warn log。这是 OpenAI cookbook 推荐的 robustness 写法。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/llm/ChatTurnResult.java
+修改   src/main/java/com/zhituagent/llm/LlmRuntime.java                 # +generateWithTools default
+修改   src/main/java/com/zhituagent/llm/LangChain4jLlmRuntime.java      # +generateWithTools real+mock
+修改   src/main/java/com/zhituagent/orchestrator/AgentOrchestrator.java # 删 looksLikeTimeQuestion, 加 LLM tool selection
+修改   src/test/java/com/zhituagent/orchestrator/AgentOrchestratorTest.java  # 注入 stub LlmRuntime
+修改   src/test/java/com/zhituagent/api/ChatControllerTest.java         # stub +generateWithTools
+修改   src/test/java/com/zhituagent/api/ObservabilityEndpointTest.java  # stub +generateWithTools
+修改   src/test/java/com/zhituagent/eval/BaselineEvalRunnerTest.java    # stub +generateWithTools
+```
+
+测试:`mvn -o test` 50/50 全绿。
 
 ---
 

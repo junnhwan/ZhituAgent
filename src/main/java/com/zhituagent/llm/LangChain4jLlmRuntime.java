@@ -2,12 +2,15 @@ package com.zhituagent.llm;
 
 import com.zhituagent.config.LlmProperties;
 import com.zhituagent.metrics.AiMetricsRecorder;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -103,6 +106,78 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                 latencyMs
         );
         return answer;
+    }
+
+    @Override
+    public ChatTurnResult generateWithTools(String systemPrompt,
+                                            List<String> messages,
+                                            List<ToolSpecification> tools,
+                                            Map<String, Object> metadata) {
+        long startNanos = System.nanoTime();
+        if (shouldUseRealProvider()) {
+            try {
+                ChatRequest.Builder builder = ChatRequest.builder()
+                        .messages(toChatMessages(systemPrompt, messages));
+                if (tools != null && !tools.isEmpty()) {
+                    builder.toolSpecifications(tools);
+                }
+                ChatResponse response = getChatModel().chat(builder.build());
+                AiMessage aiMessage = response.aiMessage();
+                String text = aiMessage == null || aiMessage.text() == null ? "" : aiMessage.text();
+                List<ToolExecutionRequest> toolCalls = aiMessage != null && aiMessage.hasToolExecutionRequests()
+                        ? aiMessage.toolExecutionRequests()
+                        : List.of();
+                long latencyMs = elapsedMillis(startNanos);
+                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", true, latencyMs);
+                log.info(
+                        "模型工具调用完成 llm.generate_with_tools.completed provider=openai-compatible toolCount={} toolCalls={} model={} latencyMs={}",
+                        tools == null ? 0 : tools.size(),
+                        toolCalls.size(),
+                        properties.getModelName(),
+                        latencyMs
+                );
+                return new ChatTurnResult(text, toolCalls);
+            } catch (RuntimeException exception) {
+                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", false, elapsedMillis(startNanos));
+                throw exception;
+            }
+        }
+        ChatTurnResult mocked = mockToolSelection(messages, tools);
+        long latencyMs = elapsedMillis(startNanos);
+        aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", true, latencyMs);
+        log.info(
+                "模型工具调用完成 llm.generate_with_tools.completed provider=mock toolCount={} toolCalls={} model={} latencyMs={}",
+                tools == null ? 0 : tools.size(),
+                mocked.toolCalls().size(),
+                properties.getModelName(),
+                latencyMs
+        );
+        return mocked;
+    }
+
+    private ChatTurnResult mockToolSelection(List<String> messages, List<ToolSpecification> tools) {
+        String latestMessage = messages.isEmpty() ? "" : messages.get(messages.size() - 1);
+        String stripped = latestMessage == null ? "" : latestMessage.toLowerCase();
+        boolean timeAvailable = tools != null && tools.stream().anyMatch(spec -> "time".equals(spec.name()));
+        if (timeAvailable && (stripped.contains("几点")
+                || stripped.contains("星期几")
+                || stripped.contains("周几")
+                || stripped.contains("几号")
+                || stripped.contains("几月几号")
+                || stripped.contains("几月几日")
+                || stripped.contains("日期")
+                || stripped.contains("day of week")
+                || stripped.contains("what day")
+                || stripped.contains("time")
+                || stripped.contains("date"))) {
+            ToolExecutionRequest request = ToolExecutionRequest.builder()
+                    .id("mock-time-" + System.nanoTime())
+                    .name("time")
+                    .arguments("{}")
+                    .build();
+            return ChatTurnResult.ofToolCalls(List.of(request));
+        }
+        return ChatTurnResult.ofText(fallbackAnswer(messages));
     }
 
     @Override
