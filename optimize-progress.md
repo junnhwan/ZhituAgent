@@ -159,7 +159,7 @@ mvn -o spring-boot:run \
 - A-1: ✅ `ToolDefinition` 加 `description` + JSON Schema (LangChain4j `ToolSpecification`)
 - A-2: ✅ `ChatLanguageModel` 真 function calling 改造,删除 `looksLikeTimeQuestion` 关键词路由
 - A-3: ✅ tool_calls 并行执行 + 错误回退到 observation
-- A-4: 错误恢复三件套(Retry / schema 校验 / observation 重投)
+- A-4: ✅ 错误恢复三件套(Retry / schema 校验 / observation 重投)
 - A-5: 跑 v2 评测对比 v1
 
 ---
@@ -279,6 +279,57 @@ mvn -o spring-boot:run \
 ```
 
 测试:`mvn -o test` 52/52 全绿(+2 新)。
+
+---
+
+### A-4 ✅ 错误恢复三件套(2026-04-30 完成)
+
+**做了什么**
+
+把 `ToolCallExecutor` 从"原样跑工具"升级到"在跑之前先校验 + 跑过之后看是不是 loop":
+
+- 新增 `orchestrator/JsonArgumentValidator` 静态工具类
+  - 输入:`JsonObjectSchema` + `Map<String,Object> arguments`
+  - 校验:必填属性是否齐全、`additionalProperties=false` 时是否有意外键、基础类型(string/integer/number/boolean)
+  - 失败时返回 `ValidationResult{valid=false, errors=List<String>}`,errors 直接 join 成 LLM 可读的 observation
+- 新增 `orchestrator/LoopDetector`
+  - 内部 `LinkedHashMap` access-order LRU(MAX_KEYS=256)
+  - `record(toolName, argumentsJson)` → 计数 +1,key = `toolName + "#" + sha256(args)`
+  - `loopThreshold()=3`:同 `(tool,args)` 第 3 次起被判定为环
+- `ToolCallExecutor.executeOne` 串成新流程:
+  1. 工具未注册 → "tool not registered"(A-3)
+  2. **环检测命中** → "tool call loop detected: tool 'X' invoked N times with identical arguments. Please change arguments or pick a different tool."
+  3. 解析 args JSON
+  4. **schema 校验失败** → "argument validation failed: missing required property 'sourceName'; unexpected property 'foo'. Please re-issue the call with correct arguments matching the tool schema."
+  5. 真正调用工具
+  6. 抛异常 → "tool execution failed: ..."(A-3)
+
+每一步失败都被包成 `ToolResult(success=false, summary=...)`,LLM 看到的 observation 都是结构化、可消费、能自纠的。
+
+**故意省掉的:`spring-retry`**
+
+- 原计划在 `LlmRuntime.generateWithTools` / `ToolDefinition.execute` 加 `@Retryable`
+- 调研发现:LangChain4j 1.1.0 的 `RetryUtils` 已经在网络层做指数退避(rate limit / 5xx 自动重试 ≥3 次)。再叠加 spring-retry 会变成"重试 × 重试",rate limit 时反而加剧 429
+- 工具层的失败大多是参数错误或业务异常(retry 没意义)。真正稀缺的"幂等可重试失败"只剩 LLM 输出 schema 不合规这一类,而 schema 校验已经把这种失败回投给 LLM 让它自行重发了 —— LLM 自己重试比 spring-retry 自动重发同一参数有效得多
+- 简历叙事点:"没有为 retry 而 retry,把 retry 留给最有信号的层(LLM 自纠)"
+
+**关键设计决策**
+
+1. **Schema 校验只覆盖我们用到的子集** —— required / additionalProperties / 基础类型,不引入 `everit-org/json-schema-validator`(依赖 ~250 KB,功能过剩)。代价:不支持 anyOf/oneOf/pattern。如果以后要,Switch 到 victools 即可。
+2. **LoopDetector 进程全局而非会话级** —— 当前每个 chat() 是一轮,环主要发生在 ReAct 多步循环里(SG 阶段)。SG 落地时会换成 per-conversation,但流程已先把"loop detected"这条 observation 信号建立起来。
+3. **观察值文本是给 LLM 读的,不是给人看的** —— 错误信息明确告诉 LLM "Please re-issue the call with correct arguments matching the tool schema",这是 OpenAI cookbook + Anthropic guide 推荐的"用自然语言指令 LLM 自纠"。简历可挂"我把可观测性从面向工程师扩展到了面向 LLM"。
+4. **测试三件套覆盖** —— 新增 `ToolCallResilienceTest`:missing required / additional property / 重复调用第 3 次触发 loop。前两次成功 + 第三次 loop,正好对应 `loopThreshold=3` 的边界。
+
+**改动文件**
+
+```
+新增   src/main/java/com/zhituagent/orchestrator/JsonArgumentValidator.java
+新增   src/main/java/com/zhituagent/orchestrator/LoopDetector.java
+修改   src/main/java/com/zhituagent/orchestrator/ToolCallExecutor.java   # 串入 loop check + schema validate
+新增   src/test/java/com/zhituagent/orchestrator/ToolCallResilienceTest.java
+```
+
+测试:`mvn -o test` 55/55 全绿(+3 新)。
 
 ---
 

@@ -38,6 +38,7 @@ public class ToolCallExecutor {
 
     private final ToolRegistry toolRegistry;
     private final ExecutorService executor;
+    private final LoopDetector loopDetector = new LoopDetector();
 
     public ToolCallExecutor(ToolRegistry toolRegistry) {
         this.toolRegistry = toolRegistry;
@@ -71,7 +72,37 @@ public class ToolCallExecutor {
             ToolResult notFound = new ToolResult(name, false, "tool not registered: " + name, Map.of());
             return new ToolExecution(request, notFound);
         }
+
+        int callCount = loopDetector.record(name, request.arguments());
+        if (callCount >= LoopDetector.loopThreshold()) {
+            log.warn("工具调用环检测命中 chat.tool.loop_detected name={} count={}", name, callCount);
+            ToolResult loop = new ToolResult(
+                    name,
+                    false,
+                    "tool call loop detected: tool '" + name + "' invoked " + callCount
+                            + " times with identical arguments. Please change arguments or pick a different tool.",
+                    Map.of()
+            );
+            return new ToolExecution(request, loop);
+        }
+
         Map<String, Object> arguments = parseArguments(request.arguments());
+
+        JsonArgumentValidator.ValidationResult validation = JsonArgumentValidator.validate(
+                tool.parameterSchema(),
+                arguments
+        );
+        if (!validation.valid()) {
+            log.warn("工具参数 schema 校验失败 chat.tool.schema_violation name={} errors={}", name, validation.errors());
+            ToolResult invalid = new ToolResult(
+                    name,
+                    false,
+                    "argument validation failed: " + validation.formatErrors() + ". Please re-issue the call with correct arguments matching the tool schema.",
+                    Map.of("validationErrors", validation.errors())
+            );
+            return new ToolExecution(request, invalid);
+        }
+
         try {
             ToolResult result = tool.execute(arguments);
             return new ToolExecution(request, result);
