@@ -399,11 +399,38 @@ aggregate: `meanRecallAt5 = 0.833`, `meanNdcgAt5 = 0.871`, `rankingCheckedCases 
 
 ---
 
-
+### A-6 ✅ 修 RRF score 阈值不兼容(2026-05-01 完成)
 
 **做了什么**
 
-把"扁平 KV trace"升级到"父子 span 树",并把 SSE 事件名从字符串字面量收紧到枚举:
+把 `RagRetriever.shouldRejectLowConfidence` 从"对所有 retrievalMode 套同一个 `minScore=0.15` 阈值"改为"mode-aware":
+
+- `dense / dense-rerank / hybrid-rerank` → top score 在 [0,1] 量级(cosine similarity 或 calibrated rerank score),保留 `minScore=0.15` 阈值不变
+- `hybrid`(无 rerank,RRF fusion 输出)→ top score 量级是 0.01~0.06(`1/(60+rank_dense) + 1/(60+rank_lexical)`),不可比 cosine,**直接放行**,把"是否相关"的判定权下放给下游 rerank 或答案生成 LLM
+
+新增 helper `isCosineScaledScore(retrievalMode)`,把 mode → score 量级的语义显式化。
+
+**关键设计决策**
+
+1. **修在 RagRetriever 而非 RrfFusionMerger** —— RRF 的 raw score 含义是"在两路检索里 rank 高",这是 fusion 的语义不该被改写。问题不在 fusion 输出,在于 RagRetriever 错把"语义相似度阈值"套到"rank 融合分数"上。修 retriever 才是 root cause fix。
+2. **`hybrid` 模式直接 return false 而非加新阈值** —— 给 `hybrid` 单独加一个 `rrfMinScore=0.001` 也能解决,但任何阈值在 RRF 上都没语义(RRF score 不是相似度,只是 rank-based 排序信号)。直接放行后,如果 RRF 召出错的 doc,rerank 会过滤掉(hybrid-rerank);没 rerank 时 LLM 看到无关 evidence 会自己说"无法确认",这是更好的 fallback。
+3. **没在 `RrfFusionMerger` 加 score normalization** —— 把 RRF score 缩放到 [0,1] 是个选项(比如除以 list max),但这样 fusion 的"绝对"语义就被破坏,失去与未来其他 fusion 策略对比的能力。Mode-aware 阈值更干净。
+4. **没改测试** —— `RrfFusionMerger` 既有单测验证 list-vs-list,本来就没经过 RagRetriever。这次 bug 正是说明这条路径需要 e2e baseline 而非纯单测来验证。A-7 重跑 v2 baseline 就是这个 e2e 验证。
+
+**改动文件**
+
+```
+修改   src/main/java/com/zhituagent/rag/RagRetriever.java       # +isCosineScaledScore + mode-aware shouldRejectLowConfidence
+```
+
+测试:`mvn -o test` 122/122 全绿(无新测试,e2e 验证留给 A-7)。
+
+**简历卖点**: 一行 if 修一个 silent bug,前提是有 baseline + holdout 把 bug 拍出来。"修复成本不高,但**没有 A-5 baseline 永远发现不了**" — 这是简历核心论点:**评测体系是工程能力的乘数**。
+
+---
+
+### T1 ✅ Span 树 + SseEventType 枚举(后端)(2026-04-30 完成)
+
 
 - 新增 `trace/Span` record:`{spanId, parentSpanId, traceId, name, kind, startEpochMillis, endEpochMillis, status, attributes}` —— 直接对齐 OpenTelemetry / LangSmith run tree 的 schema 形态
 - 新增 `trace/SpanCollector` 请求作用域 bean:`ThreadLocal` 持有当前 traceId + 开放栈 + completed 列表;支持嵌套 span,自动关联 parentSpanId;`drain()` 取出全部并清 ThreadLocal,未关闭的 span 标 "incomplete" 兜底

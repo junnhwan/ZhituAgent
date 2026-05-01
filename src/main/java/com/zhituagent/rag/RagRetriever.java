@@ -189,11 +189,20 @@ public class RagRetriever {
         if (result == null || result.snippets().isEmpty()) {
             return false;
         }
+        if (!isCosineScaledScore(result.retrievalMode())) {
+            return false;
+        }
         double minAcceptedScore = ragProperties == null ? 0.0 : ragProperties.getMinAcceptedScore();
         if (minAcceptedScore <= 0.0) {
             return false;
         }
         return result.snippets().getFirst().score() < minAcceptedScore;
+    }
+
+    private static boolean isCosineScaledScore(String retrievalMode) {
+        return DENSE_MODE.equals(retrievalMode)
+                || DENSE_RERANK_MODE.equals(retrievalMode)
+                || HYBRID_RERANK_MODE.equals(retrievalMode);
     }
 
     private RagRetrievalResult tryRerank(String processedQuery,
