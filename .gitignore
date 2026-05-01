@@ -10,3 +10,7 @@ logs/
 .env
 frontend/node_modules/
 .claude
+
+# Local-only: Claude Code session transcripts and personal resume drafts
+archive/sessions/
+docs/resume/
