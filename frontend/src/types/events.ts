@@ -16,6 +16,15 @@ export interface SseErrorEvent {
   type: "error";
   code: string;
   message: string;
+  requestId?: string;
+}
+
+export type StreamingPhase = "retrieving" | "calling-tool" | "generating";
+
+export interface SseStageEvent {
+  type: "stage";
+  phase: StreamingPhase;
+  detail?: { toolName?: string };
 }
 
 export interface PendingToolCall {
@@ -25,12 +34,13 @@ export interface PendingToolCall {
   arguments: Record<string, unknown>;
 }
 
-export type SseEvent = SseStartEvent | SseTokenEvent | SseCompleteEvent | SseErrorEvent;
+export type SseEvent = SseStartEvent | SseTokenEvent | SseCompleteEvent | SseErrorEvent | SseStageEvent;
 
 export interface StreamCallbacks {
   onStart: (sessionId: string) => void;
   onToken: (token: string) => void;
+  onStage?: (phase: StreamingPhase, detail?: { toolName?: string }) => void;
   onComplete: (trace: TraceInfo) => void;
-  onError: (code: string, message: string) => void;
+  onError: (code: string, message: string, requestId?: string) => void;
   onToolCallPending?: (pending: PendingToolCall) => void;
 }

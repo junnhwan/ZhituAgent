@@ -55,6 +55,10 @@ public class MemoryService {
         memoryStore.append(sessionId, new ChatMessageRecord(role, content, OffsetDateTime.now()));
     }
 
+    public List<ChatMessageRecord> listAll(String sessionId) {
+        return memoryStore.list(sessionId);
+    }
+
     public MemorySnapshot snapshot(String sessionId) {
         List<ChatMessageRecord> messages = memoryStore.list(sessionId);
         List<String> facts = factExtractor.extract(messages);

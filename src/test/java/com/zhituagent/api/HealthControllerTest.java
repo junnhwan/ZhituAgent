@@ -8,6 +8,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = ZhituAgentApplication.class)
 @AutoConfigureMockMvc
 @ExtendWith(OutputCaptureExtension.class)
+@TestPropertySource(properties = "logging.level.com.zhituagent.common.web.RequestIdFilter=DEBUG")
 class HealthControllerTest {
 
     @Autowired

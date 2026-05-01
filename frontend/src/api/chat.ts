@@ -71,6 +71,9 @@ export function streamChat(
             case "token":
               callbacks.onToken(payload.content);
               break;
+            case "stage":
+              callbacks.onStage?.(payload.phase, payload.detail);
+              break;
             case "tool_call_pending":
               callbacks.onToolCallPending?.({
                 pendingId: payload.pendingId,
@@ -105,7 +108,7 @@ export function streamChat(
               break;
             case "error":
               settled = true;
-              callbacks.onError(payload.code, payload.message);
+              callbacks.onError(payload.code, payload.message, payload.requestId);
               break;
           }
         }

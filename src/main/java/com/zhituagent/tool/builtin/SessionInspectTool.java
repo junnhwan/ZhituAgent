@@ -49,7 +49,7 @@ public class SessionInspectTool implements ToolDefinition {
                 "session loaded: " + sessionId,
                 Map.of(
                         "summary", detail.summary(),
-                        "recentMessages", detail.recentMessages().size()
+                        "messageCount", detail.messages().size()
                 )
         );
     }

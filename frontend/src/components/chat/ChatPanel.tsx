@@ -31,9 +31,11 @@ const SUGGESTIONS: { icon: React.ReactNode; title: string; prompt: string }[] = 
 export default function ChatPanel({
   messages,
   onSuggestionClick,
+  onRetry,
 }: {
   messages: MessageState[];
   onSuggestionClick?: (prompt: string) => void;
+  onRetry?: () => void;
 }) {
   const scrollRef = useAutoScroll(messages);
 
@@ -67,7 +69,7 @@ export default function ChatPanel({
           </div>
         )}
         {messages.map((msg, i) => (
-          <ChatMessage key={i} msg={msg} index={i} />
+          <ChatMessage key={i} msg={msg} index={i} onRetry={onRetry} />
         ))}
       </div>
     </div>

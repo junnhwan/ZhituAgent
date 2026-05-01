@@ -5,7 +5,7 @@ import java.util.List;
 public record SessionDetailResponse(
         SessionResponse session,
         String summary,
-        List<ChatMessageView> recentMessages,
+        List<ChatMessageView> messages,
         List<String> facts
 ) {
 }

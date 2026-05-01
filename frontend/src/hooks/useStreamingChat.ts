@@ -101,6 +101,12 @@ export function useStreamingChat(
             pendingContent.current += token;
             scheduleFlush();
           },
+          onStage: (phase, detail) => {
+            dispatch({
+              type: "UPDATE_STREAMING_PHASE",
+              payload: { sessionId, phase, toolName: detail?.toolName },
+            });
+          },
           onComplete: (trace: TraceInfo) => {
             cancelAnimationFrame(rafRef.current);
             dispatch({
@@ -110,13 +116,22 @@ export function useStreamingChat(
             dispatch({ type: "SET_SENDING", payload: false });
             onTraceChange({ ...trace, status: "complete" });
           },
-          onError: () => {
+          onError: (code, errMessage, requestId) => {
             cancelAnimationFrame(rafRef.current);
-            const finalContent = pendingContent.current || "生成失败，请重试";
-            dispatch({
-              type: "FINALIZE_STREAMING_MESSAGE",
-              payload: { sessionId, content: finalContent },
-            });
+            if (pendingContent.current) {
+              dispatch({
+                type: "FINALIZE_STREAMING_MESSAGE",
+                payload: { sessionId, content: pendingContent.current },
+              });
+            } else {
+              dispatch({
+                type: "MARK_STREAMING_ERROR",
+                payload: {
+                  sessionId,
+                  error: { code: code || "UNKNOWN", message: errMessage || "未知错误", requestId },
+                },
+              });
+            }
             dispatch({ type: "SET_SENDING", payload: false });
             onTraceChange({ ...emptyTrace, status: "error" });
           },
@@ -154,6 +169,12 @@ export function useStreamingChat(
     [dispatchSend],
   );
 
+  const retry = useCallback(() => {
+    const last = lastRequest.current;
+    if (!last) return;
+    dispatchSend(last.sessionId, last.userId, last.message, { client: "web" }, true);
+  }, [dispatchSend]);
+
   const abort = useCallback(() => {
     abortRef.current?.abort();
     cancelAnimationFrame(rafRef.current);
@@ -161,5 +182,5 @@ export function useStreamingChat(
     onTraceChange({ ...emptyTrace, status: "idle" });
   }, [dispatch, onTraceChange]);
 
-  return { send, abort, resendWithApproval };
+  return { send, abort, resendWithApproval, retry };
 }

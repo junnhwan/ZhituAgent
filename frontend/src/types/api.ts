@@ -9,7 +9,7 @@ export interface SessionResponse {
 export interface SessionDetailResponse {
   session: SessionResponse;
   summary: string | null;
-  recentMessages: ChatMessageView[];
+  messages: ChatMessageView[];
   facts: string[];
 }
 

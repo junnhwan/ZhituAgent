@@ -30,7 +30,7 @@ export default function App() {
   const { handleNewSession, handleSelectSession, restoreLastSession, getActiveSession } =
     useSessionManager(state, dispatch);
 
-  const { send, abort, resendWithApproval } = useStreamingChat(
+  const { send, abort, resendWithApproval, retry } = useStreamingChat(
     dispatch,
     setTrace,
     (pending) => setPendingToolCall(pending),
@@ -101,6 +101,7 @@ export default function App() {
             <ChatPanel
               messages={activeSession?.messages ?? []}
               onSuggestionClick={handleSend}
+              onRetry={retry}
             />
           </Workspace>
         }

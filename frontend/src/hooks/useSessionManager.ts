@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { createSession, getSession } from "../api/sessions";
-import type { SessionState, MessageState } from "./types";
+import type { SessionState, MessageState, StreamingPhase, StreamingError } from "./types";
 
 export interface AppState {
   sessions: SessionState[];
@@ -13,7 +13,9 @@ export type AppAction =
   | { type: "SET_ACTIVE_SESSION"; payload: string }
   | { type: "ADD_MESSAGE"; payload: { sessionId: string; message: MessageState } }
   | { type: "UPDATE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string } }
+  | { type: "UPDATE_STREAMING_PHASE"; payload: { sessionId: string; phase: StreamingPhase; toolName?: string } }
   | { type: "FINALIZE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string } }
+  | { type: "MARK_STREAMING_ERROR"; payload: { sessionId: string; error: StreamingError } }
   | { type: "SET_SENDING"; payload: boolean }
   | { type: "LOAD_SESSION_DETAIL"; payload: { sessionId: string; messages: MessageState[]; summary: string | null; facts: string[] } }
   | { type: "RESTORE_SESSION"; payload: SessionState };
@@ -52,13 +54,39 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, sessions };
     }
 
+    case "UPDATE_STREAMING_PHASE": {
+      const sessions = state.sessions.map((s) => {
+        if (s.sessionId !== action.payload.sessionId) return s;
+        const msgs = [...s.messages];
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming) {
+          msgs[msgs.length - 1] = { ...last, phase: action.payload.phase, toolName: action.payload.toolName };
+        }
+        return { ...s, messages: msgs };
+      });
+      return { ...state, sessions };
+    }
+
     case "FINALIZE_STREAMING_MESSAGE": {
       const sessions = state.sessions.map((s) => {
         if (s.sessionId !== action.payload.sessionId) return s;
         const msgs = [...s.messages];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
-          msgs[msgs.length - 1] = { ...last, content: action.payload.content, isStreaming: false };
+          msgs[msgs.length - 1] = { ...last, content: action.payload.content, isStreaming: false, phase: undefined };
+        }
+        return { ...s, messages: msgs };
+      });
+      return { ...state, sessions };
+    }
+
+    case "MARK_STREAMING_ERROR": {
+      const sessions = state.sessions.map((s) => {
+        if (s.sessionId !== action.payload.sessionId) return s;
+        const msgs = [...s.messages];
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming) {
+          msgs[msgs.length - 1] = { ...last, isStreaming: false, phase: undefined, error: action.payload.error };
         }
         return { ...s, messages: msgs };
       });
@@ -99,9 +127,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-function mapDetailToState(detail: { recentMessages: { role: string; content: string; timestamp: string }[]; summary: string | null; facts: string[] }) {
+function mapDetailToState(detail: { messages: { role: string; content: string; timestamp: string }[]; summary: string | null; facts: string[] }) {
   return {
-    messages: detail.recentMessages.map((m) => ({
+    messages: detail.messages.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
       timestamp: m.timestamp,

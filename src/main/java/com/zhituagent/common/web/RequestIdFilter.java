@@ -29,14 +29,15 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try {
             filterChain.doFilter(request, response);
         } finally {
-            log.info(
-                    "请求完成 http.request.completed method={} path={} status={} requestId={} latencyMs={}",
-                    request.getMethod(),
-                    request.getRequestURI(),
-                    response.getStatus(),
-                    requestId,
-                    (System.nanoTime() - startNanos) / 1_000_000
-            );
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            String method = request.getMethod();
+            String message = "http.request.completed method={} path={} status={} requestId={} latencyMs={}";
+            Object[] args = {method, request.getRequestURI(), response.getStatus(), requestId, latencyMs};
+            if ("GET".equalsIgnoreCase(method)) {
+                log.debug(message, args);
+            } else {
+                log.info(message, args);
+            }
             MDC.remove("requestId");
         }
     }

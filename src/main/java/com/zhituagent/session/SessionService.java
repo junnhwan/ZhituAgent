@@ -5,12 +5,14 @@ import com.zhituagent.api.dto.SessionDetailResponse;
 import com.zhituagent.api.dto.SessionResponse;
 import com.zhituagent.common.error.ApiException;
 import com.zhituagent.common.error.ErrorCode;
+import com.zhituagent.memory.ChatMessageRecord;
 import com.zhituagent.memory.MemoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.zhituagent.memory.MemorySnapshot;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -55,11 +57,12 @@ public class SessionService {
         }
         metadata.touch();
         sessionRepository.save(metadata);
+        List<ChatMessageRecord> allMessages = memoryService.listAll(sessionId);
         MemorySnapshot snapshot = memoryService.snapshot(sessionId);
         return new SessionDetailResponse(
                 metadata.toResponse(),
                 snapshot.summary(),
-                snapshot.recentMessages().stream()
+                allMessages.stream()
                         .map(message -> new ChatMessageView(message.role(), message.content(), message.timestamp()))
                         .toList(),
                 snapshot.facts()

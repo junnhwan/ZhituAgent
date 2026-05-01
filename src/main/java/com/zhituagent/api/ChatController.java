@@ -102,31 +102,45 @@ public class ChatController {
         String requestId = requestIdOf(servletRequest);
         sessionService.ensureSession(request.sessionId(), request.userId());
         sessionService.appendMessage(request.sessionId(), request.userId(), "user", request.message());
-        RouteDecision routeDecision = agentOrchestrator.decide(
-                request.message(),
-                com.zhituagent.rag.RetrievalRequestOptions.defaults(),
-                buildToolMetadata(request)
-        );
-        recordToolMetric(routeDecision);
-        logRouteDecision("chat.stream.route.selected", requestId, request.sessionId(), routeDecision);
-        ContextBundle contextBundle = contextManager.build(
-                systemPrompt,
-                memoryService.snapshot(request.sessionId()),
-                request.message(),
-                buildEvidenceBlock(routeDecision)
-        );
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
             StringBuilder answerBuilder = new StringBuilder();
+            RouteDecision routeDecision = null;
+            ContextBundle contextBundle = null;
             try {
                 emitter.send(SseEmitter.event()
                         .name(SseEventType.START.value())
                         .data(writeJson(Map.of("sessionId", request.sessionId()))));
 
+                emitStage(emitter, "retrieving", Map.of());
+
+                routeDecision = agentOrchestrator.decide(
+                        request.message(),
+                        com.zhituagent.rag.RetrievalRequestOptions.defaults(),
+                        buildToolMetadata(request)
+                );
+                recordToolMetric(routeDecision);
+                logRouteDecision("chat.stream.route.selected", requestId, request.sessionId(), routeDecision);
+
+                if (routeDecision.toolUsed() && routeDecision.toolName() != null) {
+                    emitStage(emitter, "calling-tool", Map.of("toolName", routeDecision.toolName()));
+                }
+
+                contextBundle = contextManager.build(
+                        systemPrompt,
+                        memoryService.snapshot(request.sessionId()),
+                        request.message(),
+                        buildEvidenceBlock(routeDecision)
+                );
+
+                emitStage(emitter, "generating", Map.of());
+
+                final RouteDecision finalRoute = routeDecision;
+                final ContextBundle finalContext = contextBundle;
                 llmRuntime.stream(
                         systemPrompt,
-                        contextBundle.modelMessages(),
+                        finalContext.modelMessages(),
                         request.metadata() == null ? Map.of() : request.metadata(),
                         token -> {
                             answerBuilder.append(token);
@@ -143,10 +157,10 @@ public class ChatController {
                                 sessionService.appendMessage(request.sessionId(), request.userId(), "assistant", answerBuilder.toString());
                                 long latencyMs = elapsedMillis(startNanos);
                                 TraceInfo traceInfo = chatTraceFactory.create(
-                                        routeDecision,
+                                        finalRoute,
                                         requestId,
                                         latencyMs,
-                                        contextBundle,
+                                        finalContext,
                                         answerBuilder.toString()
                                 );
                                 traceArchiveService.archiveSuccess(
@@ -158,20 +172,20 @@ public class ChatController {
                                         request.message(),
                                         answerBuilder.toString(),
                                         traceInfo,
-                                        routeDecision
+                                        finalRoute
                                 );
                                 log.info(
-                                        "流式对话完成 chat.stream.completed sessionId={} path={} retrievalHit={} toolUsed={} requestId={} answerLength={} latencyMs={}",
+                                        "chat.stream.completed sessionId={} path={} retrievalHit={} toolUsed={} requestId={} answerLength={} latencyMs={}",
                                         request.sessionId(),
-                                        routeDecision.path(),
-                                        routeDecision.retrievalHit(),
-                                        routeDecision.toolUsed(),
+                                        finalRoute.path(),
+                                        finalRoute.retrievalHit(),
+                                        finalRoute.toolUsed(),
                                         requestId,
                                         answerBuilder.length(),
                                         latencyMs
                                 );
-                                chatMetricsRecorder.recordRequest(routeDecision.path(), true, true, latencyMs);
-                                emitPendingApprovalIfNeeded(emitter, routeDecision);
+                                chatMetricsRecorder.recordRequest(finalRoute.path(), true, true, latencyMs);
+                                emitPendingApprovalIfNeeded(emitter, finalRoute);
                                 emitter.send(SseEmitter.event()
                                         .name(SseEventType.COMPLETE.value())
                                         .data(writeJson(traceInfo)));
@@ -183,15 +197,16 @@ public class ChatController {
                 );
             } catch (Exception exception) {
                 long latencyMs = elapsedMillis(startNanos);
+                String routePath = routeDecision == null ? "unknown" : routeDecision.path();
                 log.error(
-                        "流式对话失败 chat.stream.failed sessionId={} requestId={} path={} message={}",
+                        "chat.stream.failed sessionId={} requestId={} path={} message={}",
                         request.sessionId(),
                         requestId,
-                        routeDecision.path(),
+                        routePath,
                         exception.getMessage(),
                         exception
                 );
-                chatMetricsRecorder.recordRequest(routeDecision.path(), true, false, latencyMs);
+                chatMetricsRecorder.recordRequest(routePath, true, false, latencyMs);
                 traceArchiveService.archiveFailure(
                         "chat.stream.failed",
                         true,
@@ -208,7 +223,7 @@ public class ChatController {
                 try {
                     emitter.send(SseEmitter.event()
                             .name(SseEventType.ERROR.value())
-                            .data(writeJson(Map.of("code", "INTERNAL_ERROR", "message", exception.getMessage()))));
+                            .data(writeJson(Map.of("code", "INTERNAL_ERROR", "message", exception.getMessage(), "requestId", requestId))));
                 } catch (IOException ignored) {
                     // Ignore secondary streaming errors.
                 }
@@ -216,6 +231,19 @@ public class ChatController {
             }
         });
         return emitter;
+    }
+
+    private void emitStage(SseEmitter emitter, String phase, Map<String, Object> detail) {
+        try {
+            Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("phase", phase);
+            payload.put("detail", detail == null ? Map.of() : detail);
+            emitter.send(SseEmitter.event()
+                    .name(SseEventType.STAGE.value())
+                    .data(writeJson(payload)));
+        } catch (IOException ignored) {
+            // Stage events are best-effort; failure here should not abort the stream.
+        }
     }
 
     private String writeJson(Object value) throws JsonProcessingException {

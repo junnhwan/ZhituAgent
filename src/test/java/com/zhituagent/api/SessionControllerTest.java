@@ -46,7 +46,7 @@ class SessionControllerTest {
     }
 
     @Test
-    void shouldReturnSummaryAndRecentMessagesForLongConversation() throws Exception {
+    void shouldReturnSummaryAndAllMessagesForLongConversation() throws Exception {
         MvcResult createResult = mockMvc.perform(post("/api/sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -77,7 +77,7 @@ class SessionControllerTest {
         mockMvc.perform(get("/api/sessions/{sessionId}", sessionId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.summary").value(org.hamcrest.Matchers.containsString("Earlier conversation summary")))
-                .andExpect(jsonPath("$.recentMessages.length()").value(4));
+                .andExpect(jsonPath("$.messages.length()").value(6));
     }
 
     @Test
