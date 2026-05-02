@@ -27,6 +27,8 @@ record BaselineEvalResult(
         double meanAnswerKeywordCoverage,
         int rankingCheckedCases,
         int keywordCheckedCases,
+        int multiAgentCases,
+        double meanAgentSequenceMatch,
         SplitBreakdown trainSplit,
         SplitBreakdown evalSplit,
         List<CaseResult> results
@@ -42,7 +44,9 @@ record BaselineEvalResult(
             double meanNdcgAt5,
             double meanAnswerKeywordCoverage,
             int rankingCheckedCases,
-            int keywordCheckedCases
+            int keywordCheckedCases,
+            int multiAgentCases,
+            double meanAgentSequenceMatch
     ) {
     }
 
@@ -94,7 +98,18 @@ record BaselineEvalResult(
             List<String> expectedAnswerKeywords,
             boolean keywordCheckApplied,
             double answerKeywordCoverage,
-            String splitMode
+            String splitMode,
+            List<String> expectedAgentSequence,
+            List<String> actualAgentTrail,
+            boolean agentSequenceCheckApplied,
+            boolean agentSequenceMatched,
+            int multiAgentRounds,
+            boolean multiAgentReachedMaxRounds
     ) {
+
+        public CaseResult {
+            expectedAgentSequence = expectedAgentSequence == null ? List.of() : List.copyOf(expectedAgentSequence);
+            actualAgentTrail = actualAgentTrail == null ? List.of() : List.copyOf(actualAgentTrail);
+        }
     }
 }

@@ -1,0 +1,18 @@
+{
+  "alertId": "alert-001",
+  "severity": "high",
+  "alertName": "HighCPUUsage",
+  "service": "order-service",
+  "instance": "order-service-prod-3",
+  "firedAt": "2026-05-01T14:32:00+08:00",
+  "summary": "CPU usage > 90% for 10 minutes",
+  "labels": {
+    "env": "prod",
+    "team": "trade",
+    "region": "cn-hangzhou"
+  },
+  "annotations": {
+    "description": "Order service instance order-service-prod-3 sustained CPU at 92-95% for the past 10 minutes; QPS spiked from baseline ~300 to ~1200 around 14:22 (deploy window).",
+    "runbookHint": "HighCPUUsage"
+  }
+}

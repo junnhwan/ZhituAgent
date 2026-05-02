@@ -22,7 +22,9 @@ record BaselineEvalCase(
         List<String> relevantSourceIds,
         List<String> expectedAnswerKeywords,
         String splitMode,
-        String notes
+        String notes,
+        String alertFixture,
+        List<String> expectedAgentSequence
 ) {
 
     BaselineEvalCase {
@@ -32,6 +34,7 @@ record BaselineEvalCase(
         relevantSourceIds = relevantSourceIds == null ? List.of() : List.copyOf(relevantSourceIds);
         expectedAnswerKeywords = expectedAnswerKeywords == null ? List.of() : List.copyOf(expectedAnswerKeywords);
         splitMode = splitMode == null || splitMode.isBlank() ? "train" : splitMode.toLowerCase();
+        expectedAgentSequence = expectedAgentSequence == null ? List.of() : List.copyOf(expectedAgentSequence);
     }
 
     ModeExpectation modeExpectationFor(String mode) {

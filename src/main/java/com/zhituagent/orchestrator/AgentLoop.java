@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Multi-turn ReAct loop. Replaces the single-shot "decide → execute → answer"
@@ -65,7 +66,7 @@ public class AgentLoop {
                           String userMessage,
                           ContextBundle contextBundle,
                           Map<String, Object> metadata) {
-        return run(systemPrompt, userMessage, contextBundle, metadata, DEFAULT_MAX_ITERS);
+        return run(systemPrompt, userMessage, contextBundle, metadata, DEFAULT_MAX_ITERS, null);
     }
 
     public LoopResult run(String systemPrompt,
@@ -73,8 +74,22 @@ public class AgentLoop {
                           ContextBundle contextBundle,
                           Map<String, Object> metadata,
                           int maxIters) {
+        return run(systemPrompt, userMessage, contextBundle, metadata, maxIters, null);
+    }
+
+    /**
+     * Multi-agent specialist isolation entry. {@code allowedToolNames} restricts
+     * which tools the LLM sees in this loop run; {@code null} = expose all tools
+     * (single-agent behavior).
+     */
+    public LoopResult run(String systemPrompt,
+                          String userMessage,
+                          ContextBundle contextBundle,
+                          Map<String, Object> metadata,
+                          int maxIters,
+                          Set<String> allowedToolNames) {
         List<ChatMessage> conversation = bootstrap(contextBundle, userMessage);
-        List<ToolSpecification> specs = toolRegistry.specifications();
+        List<ToolSpecification> specs = toolRegistry.specifications(allowedToolNames);
         Map<String, ToolResult> firstResultByTool = new LinkedHashMap<>();
         List<ToolCallExecutor.ToolExecution> allExecutions = new ArrayList<>();
         int iter = 0;

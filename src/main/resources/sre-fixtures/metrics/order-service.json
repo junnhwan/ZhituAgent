@@ -1,0 +1,59 @@
+{
+  "service": "order-service",
+  "metrics": [
+    {
+      "name": "cpu_percent",
+      "current": 92,
+      "baseline": 35,
+      "threshold": 80,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T14:32:00+08:00"
+    },
+    {
+      "name": "memory_percent",
+      "current": 65,
+      "baseline": 60,
+      "threshold": 85,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T14:32:00+08:00"
+    },
+    {
+      "name": "qps_5m_avg",
+      "current": 1245,
+      "baseline": 320,
+      "threshold": null,
+      "status": "ABNORMAL",
+      "trend": "spike",
+      "timestamp": "2026-05-01T14:32:00+08:00"
+    },
+    {
+      "name": "p99_latency_ms",
+      "current": 2150,
+      "baseline": 480,
+      "threshold": 1000,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T20:42:00+08:00"
+    },
+    {
+      "name": "downstream_payment_p99_ms",
+      "current": 2100,
+      "baseline": 320,
+      "threshold": 1000,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T20:42:00+08:00"
+    },
+    {
+      "name": "gc_pause_ms_p99",
+      "current": 45,
+      "baseline": 30,
+      "threshold": 200,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T20:42:00+08:00"
+    }
+  ]
+}

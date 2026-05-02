@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,5 +77,37 @@ class ToolRegistryTest {
 
         ToolSpecification sessSpec = specs.stream().filter(s -> s.name().equals("session-inspect")).findFirst().orElseThrow();
         assertThat(sessSpec.parameters().required()).containsExactly("sessionId");
+    }
+
+    @Test
+    void shouldFilterSpecificationsByAllowedNames() {
+        ToolRegistry registry = builtinRegistry();
+
+        List<ToolSpecification> specs = registry.specifications(Set.of("time"));
+
+        assertThat(specs).hasSize(1);
+        assertThat(specs.get(0).name()).isEqualTo("time");
+    }
+
+    @Test
+    void shouldReturnAllSpecificationsWhenAllowedNamesIsNull() {
+        ToolRegistry registry = builtinRegistry();
+
+        assertThat(registry.specifications(null)).hasSize(3);
+    }
+
+    @Test
+    void shouldReturnEmptyWhenAllowedNamesIsEmpty() {
+        ToolRegistry registry = builtinRegistry();
+
+        assertThat(registry.specifications(Set.of())).isEmpty();
+    }
+
+    private ToolRegistry builtinRegistry() {
+        return new ToolRegistry(List.of(
+                new TimeTool(Clock.fixed(Instant.parse("2026-04-30T09:00:00Z"), ZoneId.of("Asia/Shanghai"))),
+                new KnowledgeWriteTool(new KnowledgeIngestService(new DocumentSplitter())),
+                new SessionInspectTool(new SessionService(new MemoryService(new MessageSummaryCompressor(4, 6))))
+        ));
     }
 }

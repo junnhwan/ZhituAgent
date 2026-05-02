@@ -109,13 +109,19 @@ class BaselineComparisonReporterTest {
                 recall, mrr, ndcg,
                 List.of("plan"),
                 true, keywordCoverage,
-                "train"
+                "train",
+                List.of(),
+                List.of(),
+                false,
+                false,
+                0,
+                false
         );
         BaselineEvalResult.SplitBreakdown trainSplit = new BaselineEvalResult.SplitBreakdown(
-                "train", totalCases, passedCases, 1.0, recall, mrr, ndcg, keywordCoverage, 1, 1
+                "train", totalCases, passedCases, 1.0, recall, mrr, ndcg, keywordCoverage, 1, 1, 0, 0.0
         );
         BaselineEvalResult.SplitBreakdown evalSplit = new BaselineEvalResult.SplitBreakdown(
-                "eval", 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0
+                "eval", 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0.0
         );
         return new BaselineEvalResult(
                 "eval/test.jsonl",
@@ -128,6 +134,7 @@ class BaselineComparisonReporterTest {
                 100.0, 80.0,
                 1.0, recall, mrr, ndcg, keywordCoverage,
                 1, 1,
+                0, 0.0,
                 trainSplit, evalSplit,
                 List.of(caseResult)
         );

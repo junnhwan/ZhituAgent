@@ -1,0 +1,18 @@
+{
+  "alertId": "alert-002",
+  "severity": "high",
+  "alertName": "HighMemoryUsage",
+  "service": "payment-service",
+  "instance": "payment-service-prod-2",
+  "firedAt": "2026-05-01T11:18:00+08:00",
+  "summary": "Heap usage > 85% with old-gen growth for 15 minutes",
+  "labels": {
+    "env": "prod",
+    "team": "trade",
+    "region": "cn-hangzhou"
+  },
+  "annotations": {
+    "description": "Payment service instance payment-service-prod-2 memory steadily climbed from 60% to 87% over 15 minutes, old-generation occupancy at 92%; minor GC frequency 180/min (baseline ~30/min). No traffic spike observed.",
+    "runbookHint": "HighMemoryUsage"
+  }
+}

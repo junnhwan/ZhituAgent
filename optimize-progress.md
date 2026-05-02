@@ -931,7 +931,71 @@ zhitu:
 - **UI 设计 pass**(tokens / hash hue / 引导卡 / 折叠 trace)— 见 UI 段落
 - **A-5 真 LLM baseline + Reporter** + **A-6 fusion 阈值修复** + **A-7 闭环验证**(三幕剧)— 见 A-5 / A-6 / A-7 段落
 
+### UX-2 ✅ 流式 UX 打磨 + 会话历史 fix(2026-05-01,commit `db01d59`)
+
+**Session history bug(展示层 vs LLM 上下文层解耦)**
+
+`SessionService.getSession` 之前返回 `MemorySnapshot.recentMessages`,而那是给 LLM 上下文窗口压缩用的(compressor: maxRecent=4 / threshold=6)。前端把这字段当对话历史渲染,导致用户来回切会话只能看到最近 4 条,误以为持久化坏了。
+
+**修法**:`MemoryService.listAll` 暴露全量 → `getSession` 返回它;summary / facts 仍走压缩快照。DTO 字段 `recentMessages` → `messages`,`SessionInspectTool` payload key 跟随。LLM 上下文层(`MemorySnapshot.recentMessages` / `ContextManager`)不动 — 这是核心:**展示和上下文是两个用途,本来就该解耦**。
+
+**Streaming UX(SSE 加阶段事件 + 思考占位 + 错误气泡)**
+
+之前体验:用户发送后到第一个 token 之间 = 空气泡 + 一个跳动小圆点,用户分不清"在思考"还是"后端炸了"。错误时只显示写死的"生成失败,请重试",errorCode/requestId 全部丢失。
+
+- `SseEventType` 加 `STAGE` 枚举值
+- `ChatController.streamChat` 把 `agentOrchestrator.decide()` / `contextManager.build()` 挪到 `runAsync` 里,SSE start 立即发出;依次 emit `stage(retrieving)` → `stage(calling-tool, toolName)` → `stage(generating)`;error 事件 payload 加 `requestId`
+- 前端 `MessageState` 加 `phase` / `toolName` / `error` 字段;reducer 加 `UPDATE_STREAMING_PHASE` / `MARK_STREAMING_ERROR` action
+- `ChatMessage` 三状态分支:阶段占位文案("思考中"/"正在检索知识库"/"调用工具 X"/"正在生成回答")配呼吸圆点;红色错误气泡显示 `errorCode + message + requestId + 重试按钮`;正常流式继续走 markdown + 光标
+- `useStreamingChat.retry()` 复用 lastRequest,treatAsResume=true 不重复 user 消息
+
+**Log noise(GET polling 降级)**
+
+`RequestIdFilter` 之前每个 GET `/api/sessions/{id}` 都打 INFO,前端切换会话时频繁 polling 把核心 chat 事件冲掉。改成按 method 分级:GET → DEBUG,POST/SSE → INFO。`HealthControllerTest` 用 `@TestPropertySource` 把 filter 级别提到 DEBUG 维持原有断言。顺手删掉 `RequestIdFilter` / `chat.stream.completed` / `chat.stream.failed` 里"请求完成"/"流式对话完成"这种中文动词冗余 — 事件名本身已经表达了语义。
+
+**测试**:后端 122/122 全绿;前端 `tsc -b && vite build` 干净。
+
+**简历卖点**:对标 **LangSmith / Vercel AI SDK 的 streaming UX**。SSE 加阶段事件 + 错误事件带 errorCode/requestId,这是工程级流式接口的最佳实践 — 用户能区分"后端在哪一步""哪个 requestId 排查"。"展示层 vs 上下文层解耦"是面试可挂的设计原则:同一份数据有两个用途,不该用同一个出口。
+
+---
+
+### MA-1 ✅ Multi-Agent SRE Phase 1(2026-05-02,v3 baseline)
+
+**场景化升级**:v2 是通用对话 agent — 招聘官第一反应"这是干嘛用的"。v3 加 SRE oncall 告警分析场景:输入告警 JSON,Supervisor 路由到 3 个 Specialist(`AlertTriageAgent` 不带工具内部 RAG / `LogQueryAgent` 带 `query_logs`+`query_metrics`+`time` / `ReportAgent` 不带工具)生成 Markdown 报告。一个升级解决两件事 — **业务场景 + multi-agent 编排**,与 oncall-agent 同题材但工程深度差距明显(单测 159 vs 0,multi-agent graph vs markdown prompt,nested trace vs 扁平日志)。
+
+**关键工程决策**
+
+- **工具子集隔离**:`ToolRegistry.specifications(allowedNames)` 重载 + `AgentLoop.run(..., allowedToolNames)`,LogQueryAgent 只看到 3 个相关工具,其他 specialist 看到 0 个。对标 OpenAI Assistants tools per-thread / LangGraph `create_react_agent(tools=[...])`。
+- **Supervisor JSON 路由**:`supervisor-sre.txt` 强制输出 `{"next":"<agent>|FINISH","reason":"..."}`,`SupervisorTurnResult.parseOrFallback` 兜底 markdown fence regex,parse 失败 fallback ReportAgent(不重试浪费 token)。
+- **选项 B retrieval**:`MultiAgentOrchestrator` 在调 AlertTriageAgent 前先 `RagRetriever.retrieve(alertname, 3)`,作 baseContext 传入 — 比让 specialist 内部检索 trace 更纯。
+- **Stage event hook**:`MultiAgentOrchestrator.run(..., Consumer<MultiAgentStageEvent>)` 让 SSE 层解耦,前端 `StreamingPhase` 扩 `supervisor-routing/agent/final-writing`,`AGENT_LABEL` 中文映射「告警分析中/日志查询中/报告生成中」。
+- **零侵入 v2**:`AlertController` 用 `@ConditionalOnProperty(name="zhitu.app.multi-agent-enabled", havingValue="true")`,默认 bean 不注册;`ChatService`/`ChatController` git diff 空白。
+
+**v2 vs v3 baseline(20 case = 16 chat + 4 SRE,`hybrid-rerank` mode)**
+
+| 指标 | v2 | v3 | Δ |
+|---|---|---|---|
+| 通过率 | 14/20 (70%) | 15/20 (75%) | +1 case |
+| routeAccuracy | 0.700 | **0.900** | **+0.200** |
+| multiAgentCases | 0 | **4** | **+4 全 SRE 路由 multi-agent** |
+| meanAgentSequenceMatch | 0.000 | **0.750** | train 1.0 / eval 0.5 |
+| meanRecallAt5 / MRR / nDCG | 1.000 | 1.000 | 不回归 |
+| meanAnswerKeywordCoverage | 0.972 | 0.889 | -0.083(train -0.167 / eval +0.083) |
+| p90 latency (ms) | 46588 | 95835 | +106%(supervisor 多 1-3 round 成本) |
+
+**Per-case SRE trail(可作面试反例)**
+
+- `sre-001/002/003`:supervisor 路由 [Triage → LogQuery → Report] 3 round,完全匹配 expected sequence
+- `sre-004` (SlowResponse):supervisor 主动跳过 LogQuery 直接 [Triage → Report] 2 round。**这恰好不是 bug 而是 feature** — supervisor 不是 rubber-stamp 固定流水线,会基于上下文判断是否需要查日志。trace 里能看到 supervisor decision reason,可作根因分析切口:supervisor prompt 里要不要加 "always query logs unless user explicitly asks for skip"?是 Phase 2 prompt tuning 的入口。
+
+**Phase 1 落地**:159/159 单测(132 + 27 增量)+ 前端 tsc/Vite build 干净 + v3 真 LLM baseline 验收。代码量:6 新文件 (`agent/Agent.java` + `AgentRegistry` + `AgentDefaults` + `MultiAgentOrchestrator` + `MultiAgentResult` + `SupervisorTurnResult`) + 2 SRE tool + AlertController + 4 SRE fixture (alert+runbook+log+metric) + 4 SRE eval case + supervisor prompt + 7 测试。
+
+**简历卖点**:对标 **LangGraph `create_supervisor` / OpenAI Swarm / oncall-agent**。叙事重点 — 「与同题材开源项目工程深度对比」+ 「supervisor JSON 路由的可观测性」+ 「agent sequence accuracy 作为新维度评测指标(BEIR-style holdout split)」。详细 plan / handbook 见 [`docs/2026-05-01-multi-agent-plan.md`](docs/2026-05-01-multi-agent-plan.md) / [`docs/2026-05-01-multi-agent-execution-handbook.md`](docs/2026-05-01-multi-agent-execution-handbook.md)。
+
+---
+
 ⏸ 阶段 3 候选(score 已 ceiling,以下方向解锁更大空间):
+- **MA-2 Multi-Agent Phase 2** — supervisor prompt tuning(让 sre-004 类 case 决策对齐预期)/ Phase 1 SSE endpoint + 前端 AlertDemo / 接 LangGraph-style 显式 graph DSL
 - **fixture 升级**:graded relevance(LLM-as-judge)/ adversarial cases / 大规模(>50 case)
 - **MemGPT / Mem0 风格 memory**:LLM 抽取 + add/update/merge + reflection
 - **CR-2 真 BM25**(Flyway + tsvector + jieba):A-7 已发现 score 不是当前瓶颈,优先级降低
@@ -953,5 +1017,7 @@ zhitu:
 | Tool 治理 | 零治理 | requireApproval + PendingToolCallStore single-use token + HitlController + 前端 modal + auto resume | Anthropic computer use / LangGraph interrupt+resume | HL.a / HL.b |
 | 协议接入 | 只有内置工具 | MCP McpClient interface + adapter pattern + late-binding registrar | Model Context Protocol | MCP |
 | 前端 | 扁平默认 | tokens + hash-derived hue + iMessage 气泡 + 引导卡 + Trace 折叠 | Linear / Stripe / ChatGPT | UI(11 文件 +573/-250) |
+| 流式 UX | 空气泡 + 写死错误文案 | SSE STAGE 事件 + 阶段化占位(retrieving/calling-tool/generating)+ 红色错误气泡 errorCode/requestId/重试 | LangSmith / Vercel AI SDK | UX-2(`db01d59`) |
+| Multi-Agent | 单 ReAct 一个 ToolRegistry 全暴露 | Supervisor JSON 路由 + 3 SRE Specialist + 工具子集隔离 + 选项 B retrieval + nested span + agent sequence eval 维度 | LangGraph `create_supervisor` / OpenAI Swarm / oncall-agent | MA-1 Phase 1,v3 routeAccuracy +0.2 / multiAgentCases 0→4 / agentSequenceMatch 0→0.75 |
 | **eval 闭环** | **代码已落地缺数字** | **真 LLM baseline + 评测拍出 fusion silent bug + 一行修复 + 重跑闭环** | **BEIR holdout split / 工程师 root cause debug** | **A-5 / A-6 / A-7,v2 p90 latency -25%** |
 

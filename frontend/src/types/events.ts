@@ -19,12 +19,18 @@ export interface SseErrorEvent {
   requestId?: string;
 }
 
-export type StreamingPhase = "retrieving" | "calling-tool" | "generating";
+export type StreamingPhase =
+  | "retrieving"
+  | "calling-tool"
+  | "generating"
+  | "supervisor-routing"
+  | "agent"
+  | "final-writing";
 
 export interface SseStageEvent {
   type: "stage";
   phase: StreamingPhase;
-  detail?: { toolName?: string };
+  detail?: { toolName?: string; agentName?: string; round?: number };
 }
 
 export interface PendingToolCall {
@@ -39,7 +45,7 @@ export type SseEvent = SseStartEvent | SseTokenEvent | SseCompleteEvent | SseErr
 export interface StreamCallbacks {
   onStart: (sessionId: string) => void;
   onToken: (token: string) => void;
-  onStage?: (phase: StreamingPhase, detail?: { toolName?: string }) => void;
+  onStage?: (phase: StreamingPhase, detail?: { toolName?: string; agentName?: string; round?: number }) => void;
   onComplete: (trace: TraceInfo) => void;
   onError: (code: string, message: string, requestId?: string) => void;
   onToolCallPending?: (pending: PendingToolCall) => void;

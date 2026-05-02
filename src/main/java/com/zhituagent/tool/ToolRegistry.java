@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class ToolRegistry {
@@ -30,6 +31,21 @@ public class ToolRegistry {
 
     public synchronized List<ToolSpecification> specifications() {
         return toolsByName.values().stream()
+                .map(ToolDefinition::toolSpecification)
+                .toList();
+    }
+
+    /**
+     * Returns specifications filtered to the given tool name subset. Pass {@code null}
+     * to get all tools (equivalent to the no-arg overload). Used by multi-agent
+     * specialist isolation: a specialist sees only the tools relevant to its role.
+     */
+    public synchronized List<ToolSpecification> specifications(Set<String> allowedNames) {
+        if (allowedNames == null) {
+            return specifications();
+        }
+        return toolsByName.values().stream()
+                .filter(t -> allowedNames.contains(t.name()))
                 .map(ToolDefinition::toolSpecification)
                 .toList();
     }

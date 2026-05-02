@@ -1,0 +1,18 @@
+{
+  "alertId": "alert-004",
+  "severity": "medium",
+  "alertName": "SlowResponse",
+  "service": "order-service",
+  "instance": "order-service-prod-1",
+  "firedAt": "2026-05-01T20:42:00+08:00",
+  "summary": "p99 response time > 2s for the last 5 minutes",
+  "labels": {
+    "env": "prod",
+    "team": "trade",
+    "region": "cn-hangzhou"
+  },
+  "annotations": {
+    "description": "Order service p99 latency rose from 480ms baseline to 2150ms over the last 5 minutes; downstream payment-service call accounts for ~1700ms. Overall QPS unchanged.",
+    "runbookHint": "SlowResponse"
+  }
+}

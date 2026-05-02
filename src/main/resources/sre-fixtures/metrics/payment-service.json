@@ -1,0 +1,59 @@
+{
+  "service": "payment-service",
+  "metrics": [
+    {
+      "name": "cpu_percent",
+      "current": 58,
+      "baseline": 45,
+      "threshold": 80,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T11:18:00+08:00"
+    },
+    {
+      "name": "memory_percent",
+      "current": 87,
+      "baseline": 60,
+      "threshold": 85,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T11:18:00+08:00"
+    },
+    {
+      "name": "heap_old_gen_percent",
+      "current": 92,
+      "baseline": 55,
+      "threshold": 80,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T11:18:00+08:00"
+    },
+    {
+      "name": "minor_gc_per_min",
+      "current": 178,
+      "baseline": 30,
+      "threshold": 60,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T11:18:00+08:00"
+    },
+    {
+      "name": "full_gc_pause_ms",
+      "current": 1840,
+      "baseline": 0,
+      "threshold": 500,
+      "status": "EXCEED",
+      "trend": "spike",
+      "timestamp": "2026-05-01T11:17:08+08:00"
+    },
+    {
+      "name": "qps_5m_avg",
+      "current": 410,
+      "baseline": 380,
+      "threshold": null,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T11:18:00+08:00"
+    }
+  ]
+}

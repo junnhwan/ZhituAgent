@@ -7,7 +7,13 @@ export interface SessionState {
   facts: string[];
 }
 
-export type StreamingPhase = "retrieving" | "calling-tool" | "generating";
+export type StreamingPhase =
+  | "retrieving"
+  | "calling-tool"
+  | "generating"
+  | "supervisor-routing"
+  | "agent"
+  | "final-writing";
 
 export interface StreamingError {
   code: string;
@@ -22,5 +28,7 @@ export interface MessageState {
   isStreaming?: boolean;
   phase?: StreamingPhase;
   toolName?: string;
+  agentName?: string;
+  round?: number;
   error?: StreamingError;
 }

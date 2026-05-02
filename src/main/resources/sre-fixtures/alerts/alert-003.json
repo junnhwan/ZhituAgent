@@ -1,0 +1,18 @@
+{
+  "alertId": "alert-003",
+  "severity": "critical",
+  "alertName": "DBConnectionPoolExhausted",
+  "service": "user-service",
+  "instance": "user-service-prod-1",
+  "firedAt": "2026-05-01T16:05:00+08:00",
+  "summary": "HikariCP active connections at max (100/100) with pending threads > 50",
+  "labels": {
+    "env": "prod",
+    "team": "account",
+    "region": "cn-hangzhou"
+  },
+  "annotations": {
+    "description": "User service HikariCP pool saturated: active=100/max=100, pendingThreads=53, average wait > 2s. Slow SQL counter jumped 42 in last 5 minutes.",
+    "runbookHint": "DBConnectionPoolExhausted"
+  }
+}

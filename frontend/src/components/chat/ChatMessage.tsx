@@ -10,11 +10,27 @@ const PHASE_LABEL: Record<StreamingPhase, string> = {
   retrieving: "正在检索知识库",
   "calling-tool": "调用工具中",
   generating: "正在生成回答",
+  "supervisor-routing": "调度中",
+  agent: "处理中",
+  "final-writing": "正在生成最终报告",
 };
 
-function phaseText(phase: StreamingPhase | undefined, toolName: string | undefined): string {
+const AGENT_LABEL: Record<string, string> = {
+  AlertTriageAgent: "告警分析中",
+  LogQueryAgent: "日志查询中",
+  ReportAgent: "报告生成中",
+};
+
+function phaseText(
+  phase: StreamingPhase | undefined,
+  toolName: string | undefined,
+  agentName: string | undefined,
+): string {
   if (!phase) return "思考中";
   if (phase === "calling-tool" && toolName) return `调用工具 ${toolName}`;
+  if (phase === "agent" && agentName) {
+    return AGENT_LABEL[agentName] ?? `${agentName} 处理中`;
+  }
   return PHASE_LABEL[phase];
 }
 
@@ -66,7 +82,7 @@ export default function ChatMessage({
                 animate={{ opacity: [0.3, 1, 0.3], scale: [0.85, 1.15, 0.85] }}
                 transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
               />
-              <span className="cm-phase-text">{phaseText(msg.phase, msg.toolName)}…</span>
+              <span className="cm-phase-text">{phaseText(msg.phase, msg.toolName, msg.agentName)}…</span>
             </span>
           ) : (
             <div className="cm-text cm-md">

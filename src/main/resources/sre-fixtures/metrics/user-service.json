@@ -1,0 +1,68 @@
+{
+  "service": "user-service",
+  "metrics": [
+    {
+      "name": "cpu_percent",
+      "current": 45,
+      "baseline": 30,
+      "threshold": 80,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "memory_percent",
+      "current": 62,
+      "baseline": 55,
+      "threshold": 85,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "db_pool_active",
+      "current": 100,
+      "baseline": 35,
+      "threshold": 90,
+      "status": "EXCEED",
+      "trend": "saturated",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "db_pool_max",
+      "current": 100,
+      "baseline": 100,
+      "threshold": null,
+      "status": "OK",
+      "trend": "stable",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "db_pool_pending",
+      "current": 53,
+      "baseline": 0,
+      "threshold": 10,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "slow_sql_count_5m",
+      "current": 42,
+      "baseline": 1,
+      "threshold": 5,
+      "status": "EXCEED",
+      "trend": "rising",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    },
+    {
+      "name": "upstream_qps_multiplier",
+      "current": 5,
+      "baseline": 1,
+      "threshold": 2,
+      "status": "EXCEED",
+      "trend": "spike",
+      "timestamp": "2026-05-01T16:05:00+08:00"
+    }
+  ]
+}

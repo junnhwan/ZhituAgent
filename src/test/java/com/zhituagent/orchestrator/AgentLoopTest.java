@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -103,12 +104,77 @@ class AgentLoopTest {
         spanCollector.drain();
     }
 
+    @Test
+    void shouldOnlyExposeAllowedToolsWhenSubsetGiven() {
+        StubLlm stub = new StubLlm(messages -> ChatTurnResult.ofText("done"));
+
+        SpanCollector spanCollector = new SpanCollector();
+        spanCollector.beginTrace();
+        spanCollector.startSpan("chat.turn", "request");
+
+        ToolRegistry registry = new ToolRegistry(List.of(new TimeStubTool(), new SecondStubTool()));
+        ToolCallExecutor executor = new ToolCallExecutor(registry);
+        AgentLoop loop = new AgentLoop(stub, registry, executor, spanCollector);
+
+        ContextBundle bundle = new ContextBundle(
+                "system-prompt",
+                "",
+                List.of(),
+                List.of(),
+                "irrelevant",
+                List.of("USER: irrelevant"),
+                "recent-summary"
+        );
+
+        loop.run("system-prompt", "irrelevant", bundle, Map.of(), 1, Set.of("time"));
+
+        assertThat(stub.lastSpecsSeen)
+                .extracting(ToolSpecification::name)
+                .containsExactly("time");
+
+        executor.shutdown();
+        spanCollector.drain();
+    }
+
+    @Test
+    void shouldExposeAllToolsWhenAllowedNamesIsNull() {
+        StubLlm stub = new StubLlm(messages -> ChatTurnResult.ofText("done"));
+
+        SpanCollector spanCollector = new SpanCollector();
+        spanCollector.beginTrace();
+        spanCollector.startSpan("chat.turn", "request");
+
+        ToolRegistry registry = new ToolRegistry(List.of(new TimeStubTool(), new SecondStubTool()));
+        ToolCallExecutor executor = new ToolCallExecutor(registry);
+        AgentLoop loop = new AgentLoop(stub, registry, executor, spanCollector);
+
+        ContextBundle bundle = new ContextBundle(
+                "system-prompt",
+                "",
+                List.of(),
+                List.of(),
+                "irrelevant",
+                List.of("USER: irrelevant"),
+                "recent-summary"
+        );
+
+        loop.run("system-prompt", "irrelevant", bundle, Map.of(), 1);
+
+        assertThat(stub.lastSpecsSeen)
+                .extracting(ToolSpecification::name)
+                .containsExactlyInAnyOrder("time", "second");
+
+        executor.shutdown();
+        spanCollector.drain();
+    }
+
     private interface TurnFn {
         ChatTurnResult next(List<ChatMessage> messages);
     }
 
     private static class StubLlm implements LlmRuntime {
         private final TurnFn fn;
+        List<ToolSpecification> lastSpecsSeen = List.of();
 
         StubLlm(TurnFn fn) {
             this.fn = fn;
@@ -131,6 +197,7 @@ class AgentLoopTest {
                                                List<ChatMessage> messages,
                                                List<ToolSpecification> tools,
                                                Map<String, Object> metadata) {
+            this.lastSpecsSeen = tools == null ? List.of() : List.copyOf(tools);
             return fn.next(messages);
         }
     }
@@ -149,6 +216,23 @@ class AgentLoopTest {
         @Override
         public ToolResult execute(Map<String, Object> arguments) {
             return new ToolResult("time", true, "current time is mock-12:00", Map.of("time", "mock-12:00"));
+        }
+    }
+
+    private static class SecondStubTool implements ToolDefinition {
+        @Override
+        public String name() {
+            return "second";
+        }
+
+        @Override
+        public JsonObjectSchema parameterSchema() {
+            return JsonObjectSchema.builder().build();
+        }
+
+        @Override
+        public ToolResult execute(Map<String, Object> arguments) {
+            return new ToolResult("second", true, "second tool ran", Map.of());
         }
     }
 }

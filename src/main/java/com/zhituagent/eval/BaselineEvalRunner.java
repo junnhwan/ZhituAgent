@@ -1,15 +1,21 @@
 package com.zhituagent.eval;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhituagent.agent.MultiAgentOrchestrator;
+import com.zhituagent.agent.MultiAgentResult;
 import com.zhituagent.api.dto.ChatResponse;
 import com.zhituagent.chat.ChatService;
+import com.zhituagent.config.AppProperties;
 import com.zhituagent.config.EvalProperties;
 import com.zhituagent.rag.RetrievalMode;
 import com.zhituagent.rag.RetrievalRequestOptions;
 import com.zhituagent.session.SessionService;
 import com.zhituagent.rag.KnowledgeIngestService;
+import com.zhituagent.tool.sre.SreFixtureLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -39,18 +45,27 @@ class BaselineEvalRunner {
     private final KnowledgeIngestService knowledgeIngestService;
     private final ObjectMapper objectMapper;
     private final EvalProperties evalProperties;
+    private final AppProperties appProperties;
+    private final MultiAgentOrchestrator multiAgentOrchestrator;
+    private final SreFixtureLoader sreFixtureLoader;
     private final Set<String> seededKnowledgeKeys = ConcurrentHashMap.newKeySet();
 
     BaselineEvalRunner(ChatService chatService,
                        SessionService sessionService,
                        KnowledgeIngestService knowledgeIngestService,
                        ObjectMapper objectMapper,
-                       EvalProperties evalProperties) {
+                       EvalProperties evalProperties,
+                       AppProperties appProperties,
+                       @Autowired(required = false) MultiAgentOrchestrator multiAgentOrchestrator,
+                       @Autowired(required = false) SreFixtureLoader sreFixtureLoader) {
         this.chatService = chatService;
         this.sessionService = sessionService;
         this.knowledgeIngestService = knowledgeIngestService;
         this.objectMapper = objectMapper;
         this.evalProperties = evalProperties;
+        this.appProperties = appProperties;
+        this.multiAgentOrchestrator = multiAgentOrchestrator;
+        this.sreFixtureLoader = sreFixtureLoader;
     }
 
     BaselineEvalResult runBaselineFixture(Path reportPath) throws Exception {
@@ -123,6 +138,12 @@ class BaselineEvalRunner {
         int keywordCheckedCases = (int) results.stream()
                 .filter(BaselineEvalResult.CaseResult::keywordCheckApplied)
                 .count();
+        int multiAgentCases = (int) results.stream()
+                .filter(BaselineEvalResult.CaseResult::agentSequenceCheckApplied)
+                .count();
+        double meanAgentSequenceMatch = meanOverApplied(results,
+                BaselineEvalResult.CaseResult::agentSequenceCheckApplied,
+                result -> result.agentSequenceMatched() ? 1.0 : 0.0);
         double meanHitAt5 = meanOverApplied(results, BaselineEvalResult.CaseResult::rankingCheckApplied,
                 result -> result.hitAt5() ? 1.0 : 0.0);
         double meanRecallAt5 = meanOverApplied(results, BaselineEvalResult.CaseResult::rankingCheckApplied,
@@ -162,6 +183,8 @@ class BaselineEvalRunner {
                 meanAnswerKeywordCoverage,
                 rankingCheckedCases,
                 keywordCheckedCases,
+                multiAgentCases,
+                meanAgentSequenceMatch,
                 trainSplit,
                 evalSplit,
                 List.copyOf(results)
@@ -171,6 +194,9 @@ class BaselineEvalRunner {
     private BaselineEvalResult.CaseResult runCase(BaselineEvalCase evalCase,
                                                   RetrievalMode retrievalMode,
                                                   String modeLabel) {
+        if (shouldRunMultiAgent(evalCase)) {
+            return runMultiAgentCase(evalCase, retrievalMode, modeLabel);
+        }
         String sessionId = "eval_" + modeLabel.replace('-', '_') + "_" + evalCase.caseId() + "_" + shortId();
         String userId = "eval_user";
         sessionService.ensureSession(sessionId, userId);
@@ -282,8 +308,115 @@ class BaselineEvalRunner {
                 expectedAnswerKeywords,
                 keywordCheckApplied,
                 answerKeywordCoverage,
-                evalCase.splitMode()
+                evalCase.splitMode(),
+                evalCase.expectedAgentSequence(),
+                List.of(),
+                false,
+                false,
+                0,
+                false
         );
+    }
+
+    private boolean shouldRunMultiAgent(BaselineEvalCase evalCase) {
+        return appProperties.isMultiAgentEnabled()
+                && multiAgentOrchestrator != null
+                && evalCase.alertFixture() != null
+                && !evalCase.alertFixture().isBlank();
+    }
+
+    private BaselineEvalResult.CaseResult runMultiAgentCase(BaselineEvalCase evalCase,
+                                                            RetrievalMode retrievalMode,
+                                                            String modeLabel) {
+        String sessionId = "eval_" + modeLabel.replace('-', '_') + "_" + evalCase.caseId() + "_ma_" + shortId();
+        long start = System.currentTimeMillis();
+
+        String alertJson = loadAlertJson(evalCase);
+        MultiAgentResult result = multiAgentOrchestrator.run(
+                alertJson,
+                Map.of("evalCaseId", evalCase.caseId(), "trigger", "alert"),
+                appProperties.getMultiAgentMaxRounds()
+        );
+        long latencyMs = System.currentTimeMillis() - start;
+
+        List<String> expected = evalCase.expectedAgentSequence();
+        boolean agentSeqApplied = !expected.isEmpty();
+        boolean agentSeqMatched = agentSeqApplied && prefixMatch(result.agentTrail(), expected);
+
+        List<String> expectedKeywords = evalCase.expectedAnswerKeywords();
+        boolean keywordCheckApplied = !expectedKeywords.isEmpty();
+        double keywordCoverage = keywordCheckApplied
+                ? RankingMetrics.keywordCoverage(result.finalAnswer(), expectedKeywords)
+                : 0.0;
+
+        boolean toolUsedInRun = result.executions().stream()
+                .anyMatch(exec -> exec.toolsUsed() != null && !exec.toolsUsed().isEmpty());
+        String expectedPath = evalCase.expectedPath() == null ? "multi-agent" : evalCase.expectedPath();
+        boolean routeMatched = expectedPath.isBlank() || "multi-agent".equals(expectedPath);
+
+        log.info("multi-agent eval case completed caseId={} agentTrail={} keywordCoverage={} latencyMs={}",
+                evalCase.caseId(), result.agentTrail(), keywordCoverage, latencyMs);
+
+        return new BaselineEvalResult.CaseResult(
+                evalCase.caseId(),
+                evalCase.type(),
+                sessionId,
+                expectedPath,
+                "multi-agent",
+                routeMatched,
+                evalCase.expectedRetrievalHit(), false, !evalCase.expectedRetrievalHit(),
+                evalCase.expectedToolUsed(), toolUsedInRun, evalCase.expectedToolUsed() == toolUsedInRun,
+                evalCase.expectedSummaryPresentBeforeRun(), false,
+                evalCase.expectedSummaryPresentBeforeRun() == false,
+                "", false, true,
+                "",
+                retrievalMode.value(),
+                "multi-agent",
+                false, true,
+                evalCase.expectedFactCountAtLeast() == null ? 0 : evalCase.expectedFactCountAtLeast(),
+                0,
+                evalCase.expectedFactCountAtLeast() != null,
+                evalCase.expectedFactCountAtLeast() == null,
+                0, 0, "", 0.0, "", 0.0,
+                latencyMs, 0L, 0L,
+                preview(result.finalAnswer()),
+                evalCase.relevantSourceIds(),
+                List.of(),
+                false, false, 0.0, 0.0, 0.0,
+                expectedKeywords, keywordCheckApplied, keywordCoverage,
+                evalCase.splitMode(),
+                expected,
+                result.agentTrail(),
+                agentSeqApplied,
+                agentSeqMatched,
+                result.rounds(),
+                result.reachedMaxRounds()
+        );
+    }
+
+    private String loadAlertJson(BaselineEvalCase evalCase) {
+        String fixtureName = evalCase.alertFixture();
+        if (sreFixtureLoader != null) {
+            return sreFixtureLoader.loadJson("sre-fixtures/alerts/" + fixtureName + ".json")
+                    .map(JsonNode::toPrettyString)
+                    .orElseGet(() -> {
+                        log.warn("alert fixture not found, falling back to case message: {}", fixtureName);
+                        return evalCase.message();
+                    });
+        }
+        return evalCase.message();
+    }
+
+    private static boolean prefixMatch(List<String> actual, List<String> expected) {
+        if (actual == null || expected == null || actual.size() < expected.size()) {
+            return false;
+        }
+        for (int i = 0; i < expected.size(); i++) {
+            if (!expected.get(i).equals(actual.get(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private BaselineEvalResult.CaseResult buildErrorResult(BaselineEvalCase evalCase,
@@ -319,7 +452,13 @@ class BaselineEvalRunner {
                 relevantSourceIds, List.of(),
                 rankingCheckApplied, false, 0.0, 0.0, 0.0,
                 expectedAnswerKeywords, keywordCheckApplied, 0.0,
-                evalCase.splitMode()
+                evalCase.splitMode(),
+                evalCase.expectedAgentSequence(),
+                List.of(),
+                !evalCase.expectedAgentSequence().isEmpty(),
+                false,
+                0,
+                false
         );
     }
 
@@ -469,7 +608,7 @@ class BaselineEvalRunner {
                 .filter(result -> splitMode.equalsIgnoreCase(result.splitMode()))
                 .toList();
         if (bucket.isEmpty()) {
-            return new BaselineEvalResult.SplitBreakdown(splitMode, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
+            return new BaselineEvalResult.SplitBreakdown(splitMode, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0.0);
         }
         int rankingCases = (int) bucket.stream()
                 .filter(BaselineEvalResult.CaseResult::rankingCheckApplied)
@@ -477,6 +616,12 @@ class BaselineEvalRunner {
         int keywordCases = (int) bucket.stream()
                 .filter(BaselineEvalResult.CaseResult::keywordCheckApplied)
                 .count();
+        int multiAgentCasesInSplit = (int) bucket.stream()
+                .filter(BaselineEvalResult.CaseResult::agentSequenceCheckApplied)
+                .count();
+        double meanAgentSeqMatchInSplit = meanOverApplied(bucket,
+                BaselineEvalResult.CaseResult::agentSequenceCheckApplied,
+                result -> result.agentSequenceMatched() ? 1.0 : 0.0);
         return new BaselineEvalResult.SplitBreakdown(
                 splitMode,
                 bucket.size(),
@@ -491,7 +636,9 @@ class BaselineEvalRunner {
                 meanOverApplied(bucket, BaselineEvalResult.CaseResult::keywordCheckApplied,
                         BaselineEvalResult.CaseResult::answerKeywordCoverage),
                 rankingCases,
-                keywordCases
+                keywordCases,
+                multiAgentCasesInSplit,
+                meanAgentSeqMatchInSplit
         );
     }
 
