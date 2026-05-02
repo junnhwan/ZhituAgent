@@ -10,10 +10,13 @@ import Composer from "./components/composer/Composer";
 import KnowledgeModal from "./components/knowledge/KnowledgeModal";
 import SettingsModal from "./components/knowledge/SettingsModal";
 import HitlConfirmPanel from "./components/hitl/HitlConfirmPanel";
+import SreDemoPanel from "./components/sre/SreDemoPanel";
 import { appReducer, useSessionManager } from "./hooks/useSessionManager";
 import { useStreamingChat, emptyTraceDisplay, type TraceDisplay } from "./hooks/useStreamingChat";
 import type { PendingToolCall } from "./types/events";
 import { approveToolCall, denyToolCall } from "./api/tools";
+
+type View = "chat" | "sre";
 
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, {
@@ -26,6 +29,7 @@ export default function App() {
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
+  const [view, setView] = useState<View>("chat");
 
   const { handleNewSession, handleSelectSession, restoreLastSession, getActiveSession } =
     useSessionManager(state, dispatch);
@@ -90,23 +94,30 @@ export default function App() {
             onSelect={(i) => handleSelectSession(state.sessions[i].sessionId)}
             onOpenKnowledge={() => setKnowledgeOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
+            view={view}
+            onViewChat={() => setView("chat")}
+            onViewSre={() => setView("sre")}
           />
         }
         main={
-          <Workspace
-            title={activeSession?.title ?? "新对话"}
-            sessionId={state.activeSessionId}
-            facts={activeSession?.facts ?? []}
-          >
-            <ChatPanel
-              messages={activeSession?.messages ?? []}
-              onSuggestionClick={handleSend}
-              onRetry={retry}
-            />
-          </Workspace>
+          view === "chat" ? (
+            <Workspace
+              title={activeSession?.title ?? "新对话"}
+              sessionId={state.activeSessionId}
+              facts={activeSession?.facts ?? []}
+            >
+              <ChatPanel
+                messages={activeSession?.messages ?? []}
+                onSuggestionClick={handleSend}
+                onRetry={retry}
+              />
+            </Workspace>
+          ) : (
+            <SreDemoPanel />
+          )
         }
-        aside={<TracePanel trace={trace} />}
-        composer={<Composer sending={state.sending} onSend={handleSend} onAbort={abort} />}
+        aside={view === "chat" ? <TracePanel trace={trace} /> : <TracePanel trace={emptyTraceDisplay()} />}
+        composer={view === "chat" ? <Composer sending={state.sending} onSend={handleSend} onAbort={abort} /> : null}
       />
       <KnowledgeModal open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} sessionId={state.activeSessionId} />

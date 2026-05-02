@@ -16,6 +16,7 @@ public enum SseEventType {
     COMPLETE("complete"),
     ERROR("error"),
     STAGE("stage"),
+    REPORT("report"),
 
     SPAN_START("span_start"),
     SPAN_END("span_end"),

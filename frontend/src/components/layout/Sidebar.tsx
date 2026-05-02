@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MessageSquarePlus, Settings, Layers } from "lucide-react";
+import { MessageSquarePlus, Settings, Layers, Activity, MessageCircle } from "lucide-react";
 import type { SessionState } from "../../hooks/types";
 import "./Sidebar.css";
 
@@ -27,6 +27,9 @@ export default function Sidebar({
   onSelect,
   onOpenKnowledge,
   onOpenSettings,
+  view,
+  onViewChat,
+  onViewSre,
 }: {
   sessions: SessionState[];
   activeIdx: number;
@@ -34,11 +37,40 @@ export default function Sidebar({
   onSelect: (i: number) => void;
   onOpenKnowledge: () => void;
   onOpenSettings: () => void;
+  view: "chat" | "sre";
+  onViewChat: () => void;
+  onViewSre: () => void;
 }) {
   return (
     <>
       <div className="nav-logo">
         <div className="nav-logo-dot" />
+      </div>
+
+      <div className="nav-divider" />
+
+      <div className="nav-views">
+        <motion.button
+          type="button"
+          className={`nav-icon-btn ${view === "chat" ? "active-view" : "ghost"}`}
+          onClick={onViewChat}
+          title="对话"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.92 }}
+        >
+          <MessageCircle size={20} />
+        </motion.button>
+
+        <motion.button
+          type="button"
+          className={`nav-icon-btn ${view === "sre" ? "active-view" : "ghost"}`}
+          onClick={onViewSre}
+          title="SRE 告警 Demo"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.92 }}
+        >
+          <Activity size={20} />
+        </motion.button>
       </div>
 
       <div className="nav-divider" />
@@ -189,7 +221,16 @@ function SidebarStyles() {
       .nav-icon-btn:hover { background: rgba(255,255,255,0.55); color: var(--t2); }
       .nav-icon-btn.ghost { background: transparent; }
       .nav-icon-btn.ghost:hover { background: rgba(255,255,255,0.3); }
+      .nav-icon-btn.active-view {
+        background: var(--g-azure-solid);
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(14,165,233,0.32);
+      }
       .nav-icon-btn.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+      .nav-views {
+        display: flex; flex-direction: column; align-items: center; gap: 6px;
+      }
     `}</style>
   );
 }

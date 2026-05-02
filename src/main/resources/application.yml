@@ -16,6 +16,7 @@ server:
 zhitu:
   app:
     system-prompt-location: classpath:system-prompt/chat-agent.txt
+    multi-agent-enabled: ${ZHITU_MULTI_AGENT_ENABLED:true}
   llm:
     mock-mode: ${ZHITU_LLM_MOCK_MODE:true}
     base-url: ${ZHITU_CHAT_BASE_URL:}
