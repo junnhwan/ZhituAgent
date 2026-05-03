@@ -8,6 +8,7 @@ public class InfrastructureProperties {
     private boolean redisEnabled = false;
     private boolean elasticsearchEnabled = false;
     private boolean minioEnabled = false;
+    private boolean kafkaEnabled = false;
 
     public boolean isRedisEnabled() {
         return redisEnabled;
@@ -31,5 +32,13 @@ public class InfrastructureProperties {
 
     public void setMinioEnabled(boolean minioEnabled) {
         this.minioEnabled = minioEnabled;
+    }
+
+    public boolean isKafkaEnabled() {
+        return kafkaEnabled;
+    }
+
+    public void setKafkaEnabled(boolean kafkaEnabled) {
+        this.kafkaEnabled = kafkaEnabled;
     }
 }

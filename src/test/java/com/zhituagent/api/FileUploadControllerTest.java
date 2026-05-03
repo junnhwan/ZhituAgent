@@ -3,6 +3,9 @@ package com.zhituagent.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.file.ChunkedUploadService;
 import com.zhituagent.file.FileIngestService;
+import com.zhituagent.file.FileParseStatusService;
+import com.zhituagent.file.FileUploadEvent;
+import com.zhituagent.file.FileUploadEventProducer;
 import com.zhituagent.file.MinioStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -191,5 +194,75 @@ class FileUploadControllerTest {
                 .andExpect(jsonPath("$.uploaded.length()").value(3))
                 .andExpect(jsonPath("$.missing.length()").value(2))
                 .andExpect(jsonPath("$.complete").value(false));
+    }
+
+    // ---------- M3 async-mode ----------
+
+    @org.junit.jupiter.api.Nested
+    class AsyncMode {
+
+        private FileUploadEventProducer producer;
+        private FileParseStatusService statusService;
+        private MockMvc asyncMvc;
+
+        @BeforeEach
+        void wireAsync() {
+            producer = mock(FileUploadEventProducer.class);
+            statusService = mock(FileParseStatusService.class);
+            FileUploadController c = new FileUploadController(minio, chunked, ingest, producer, statusService);
+            asyncMvc = MockMvcBuilders.standaloneSetup(c).build();
+        }
+
+        @Test
+        void single_upload_returns_202_publishes_event_and_marks_queued() throws Exception {
+            MockMultipartFile mp = new MockMultipartFile(
+                    "file", "doc.pdf", "application/pdf", "body".getBytes());
+
+            asyncMvc.perform(multipart("/api/files/upload").file(mp))
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.sourceName").value("doc.pdf"))
+                    .andExpect(jsonPath("$.chunksIngested").value(-1));
+
+            verify(minio).putObject(anyString(), any(InputStream.class), anyLong(), eq("application/pdf"));
+            verify(producer).publish(any(FileUploadEvent.class));
+            verify(statusService).mark(anyString(), eq(FileParseStatusService.Status.QUEUED));
+            verify(ingest, never()).ingestFromMinio(anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void merge_returns_202_when_async_and_skips_sync_ingest() throws Exception {
+            when(chunked.isComplete("u-9", 3)).thenReturn(true);
+            String body = new ObjectMapper().writeValueAsString(new FileUploadController.MergeRequest(
+                    "u-9", 3, "doc.pdf", "application/pdf"));
+
+            asyncMvc.perform(post("/api/files/merge")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.objectKey").value("uploads/u-9/doc.pdf"))
+                    .andExpect(jsonPath("$.chunksIngested").value(-1));
+
+            verify(minio).composeObject(eq("uploads/u-9/doc.pdf"), any());
+            verify(producer).publish(any(FileUploadEvent.class));
+            verify(statusService).mark(eq("u-9"), eq(FileParseStatusService.Status.QUEUED));
+            verify(ingest, never()).ingestFromMinio(anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void status_endpoint_includes_parse_status_when_async_enabled() throws Exception {
+            when(statusService.get("u-7")).thenReturn(FileParseStatusService.Status.INDEXED);
+
+            asyncMvc.perform(get("/api/files/status/u-7"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.parseStatus").value("INDEXED"))
+                    .andExpect(jsonPath("$.complete").value(true));
+        }
+
+        @Test
+        void status_endpoint_returns_404_when_uploadId_unknown_and_no_chunk_state() throws Exception {
+            when(statusService.get("nope")).thenReturn(null);
+            asyncMvc.perform(get("/api/files/status/nope"))
+                    .andExpect(status().isNotFound());
+        }
     }
 }

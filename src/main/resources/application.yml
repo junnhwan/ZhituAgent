@@ -57,6 +57,14 @@ zhitu:
     secret-key: ${ZHITU_MINIO_SECRET_KEY:}
     bucket: ${ZHITU_MINIO_BUCKET:zhitu-agent-files}
     presigned-url-expiry-seconds: ${ZHITU_MINIO_PRESIGNED_URL_EXPIRY:3600}
+  kafka:
+    bootstrap-servers: ${ZHITU_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    topic-parse: ${ZHITU_KAFKA_TOPIC_PARSE:zhitu.file.parse}
+    topic-dlt: ${ZHITU_KAFKA_TOPIC_DLT:zhitu.file.parse.DLT}
+    consumer-group: ${ZHITU_KAFKA_CONSUMER_GROUP:zhitu-file-parse}
+    transactional-id-prefix: ${ZHITU_KAFKA_TX_ID_PREFIX:zhitu-file-tx-}
+    retry-backoff-ms: ${ZHITU_KAFKA_RETRY_BACKOFF_MS:3000}
+    retry-max-attempts: ${ZHITU_KAFKA_RETRY_MAX_ATTEMPTS:4}
   file:
     upload-chunk-size: ${ZHITU_FILE_UPLOAD_CHUNK_SIZE:5242880}
     parent-chunk-size: ${ZHITU_FILE_PARENT_CHUNK_SIZE:1048576}
@@ -67,6 +75,7 @@ zhitu:
     redis-enabled: ${ZHITU_REDIS_ENABLED:false}
     elasticsearch-enabled: ${ZHITU_ES_ENABLED:false}
     minio-enabled: ${ZHITU_MINIO_ENABLED:false}
+    kafka-enabled: ${ZHITU_KAFKA_ENABLED:false}
   trace-archive:
     enabled: ${ZHITU_TRACE_ARCHIVE_ENABLED:true}
     dir: ${ZHITU_TRACE_ARCHIVE_DIR:logs/trace}
