@@ -1064,3 +1064,31 @@ zhitu:
 
 **🔥 叙事更正**(2026-05-03 发现): v2 vs v3 routeAcc +0.20 提升 **不是 ES 功劳,是 multi-agent SRE Phase 1 commit `3b933bc` 带来的**。证据:重跑 v2(ES off InMemory)+ v3(ES on)对比,18 个非 SRE case 通通 True 通通 True,4 个 SRE case 在 v2 (07:23) 全 False、之后全 True。multi-agent commit 介于 v2 和 v3 baseline 之间,是真正解锁 SRE 路由的改造。**ES 价值在工程深度(IK/KNN/native rescore/真 hybrid),不在数字**。fixture 升级后才能拍出 ES 真价值。
 
+### M5(perf bench + resume 叙事)
+
+`scripts/perf-bench-upload.sh` — 50 个并发上传(`xargs -P 10 curl`)对比 sync/async 控制器视角延迟。操作流程:
+
+```bash
+# 1) sync 模式
+ZHITU_KAFKA_ENABLED=false mvn -o spring-boot:run -Dspring-boot.run.profiles=local
+scripts/perf-bench-upload.sh --label=sync --requests=50 --concurrency=10
+
+# 2) async 模式
+ZHITU_KAFKA_ENABLED=true mvn -o spring-boot:run -Dspring-boot.run.profiles=local
+scripts/perf-bench-upload.sh --label=async --requests=50 --concurrency=10
+
+# 3) 对比 target/perf-bench/latency-sync.txt vs latency-async.txt 的 p50/p90/p99
+```
+
+预期叙事:async 路径控制器视角 p90 大幅下降(从 O(seconds) 到 < 200 ms),consumer 在自己线程池里把 Tika+embed+ES bulkIndex 串行跑。**控制器延迟 ≠ 端到端入库延迟** — 后者在 async 模式下只是从 HTTP 线程移到 consumer,总开销没消失,只是被异步化了。这是 trade-off 不是 win,简历叙事要老实。
+
+### 简历叙事(v3 段最终版,2026-05-03)
+
+阶段 3 一句话总结:**「同栈 Java 项目 PaiSmart 工程对标 → 把 v2 假 hybrid 检索 + 同步 Q:A 入库一次性现代化为 ES native hybrid + Kafka 异步管线」**。可量化卖点(写到简历 bullet 时只列能力 + 数字,不写故事):
+
+- 把 PostgreSQL+pgvector 替换为 Elasticsearch 8.10 + IK 中文分词,**KNN+BM25+rescore 在单次 ES 调用内完成**(替换原 `text ILIKE '%token%'` 子串扫描伪 hybrid)
+- 接入 MinIO + Tika + HanLP + Redis bitmap 实现**多格式文件入库管线**(15 种格式 / 分片续传 / 内存阈值熔断 / 解析—嵌入—ES 一站式)
+- 用 Kafka KRaft 单节点 + 事务 producer + at-least-once consumer + DLT 实现**异步入库**;`acks=all + idempotence=true + transactional.id` 保证 producer exactly-once;`_id=chunkId`(sha256) 让 ES UPSERT 吃掉 consumer 重投递,实现 exactly-once-effect
+- **测试治理**:217 单测 + 4 Testcontainers Kafka IT,`mvn test` / `mvn verify` 通过 surefire/failsafe `@Tag("integration")` 拆分;无 Docker 环境 IT 自动 skip
+- 总产出:6 commit(M1 → M5)/ 17 主代码文件 / 1046 行新增 / 真实云端 smoke 通过 → 上传 PDF → 异步链路 → BM25 召回 ✅
+
