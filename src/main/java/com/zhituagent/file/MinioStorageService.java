@@ -14,7 +14,7 @@ import io.minio.http.Method;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  * other code can {@code @Autowired(required=false)} it for graceful degradation.
  */
 @Service
-@ConditionalOnBean(MinioClient.class)
+@ConditionalOnProperty(prefix = "zhitu.infrastructure", name = "minio-enabled", havingValue = "true")
 public class MinioStorageService {
 
     private static final Logger log = LoggerFactory.getLogger(MinioStorageService.class);

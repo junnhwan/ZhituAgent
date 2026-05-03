@@ -46,6 +46,20 @@ public class KnowledgeIngestService {
                 .toList());
     }
 
+    /**
+     * Bypass {@link DocumentSplitter} and ingest pre-built {@link KnowledgeChunk}s
+     * straight into the store. Used by the file-upload pipeline where chunking
+     * already happened in {@code TikaParseService} (parent-child) and the
+     * Anthropic-contextual {@code embedText} is set deterministically from the
+     * parent window — no LLM call needed in the ingest hot path.
+     */
+    public void ingest(List<KnowledgeChunk> preChunkedKnowledge) {
+        if (preChunkedKnowledge == null || preChunkedKnowledge.isEmpty()) {
+            return;
+        }
+        knowledgeStore.addAll(preChunkedKnowledge);
+    }
+
     public List<KnowledgeSnippet> search(String query, int limit) {
         return knowledgeStore.search(query, limit);
     }
