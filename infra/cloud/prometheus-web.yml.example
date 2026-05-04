@@ -1,0 +1,13 @@
+# Prometheus basic auth config (https://prometheus.io/docs/prometheus/latest/configuration/https/).
+# Generate the bcrypt hash on the cloud server (do NOT commit a real hash):
+#
+#   docker run --rm httpd:2.4 htpasswd -nbB prom_demo 'YOUR_STRONG_PASSWORD'
+#
+# Copy the part AFTER the colon (the $2y$10$... bcrypt blob) into the value
+# below, replacing the placeholder. Then `docker compose up -d prometheus`.
+#
+# Username convention here: 'prom_demo'. Change to whatever you like — must
+# match the PROMETHEUS_USERNAME in zhitu-agent-java's .env.
+
+basic_auth_users:
+  prom_demo: REPLACE_WITH_BCRYPT_HASH

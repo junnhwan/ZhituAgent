@@ -112,6 +112,47 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Prometheus — metrics scrape + query for the multi-agent SRE narrative.
+  # Security: bcrypt basic auth via web.yml + cloud security group IP whitelist
+  # (same belt-and-braces as ES after the 2026-05-03 ransomware incident).
+  # Don't drop either — basic auth alone is brute-forceable, IP whitelist alone
+  # collapses if the rule is mis-typed.
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: zhitu-cloud-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-web.yml:/etc/prometheus/web.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.config.file=/etc/prometheus/web.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+    restart: unless-stopped
+
+  # node_exporter — host-level OS metrics (CPU, memory, disk, network).
+  # No public port; only the prometheus container reaches it via docker DNS,
+  # so it stays inside the compose network and skips its own auth layer.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: zhitu-cloud-node-exporter
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
 volumes:
   es-data:
   es-plugins:
@@ -119,3 +160,4 @@ volumes:
   kafka-data:
   minio-data:
   mysql-data:
+  prometheus-data:

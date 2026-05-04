@@ -1,0 +1,18 @@
+# Prometheus scrape config for zhitu cloud demo.
+# Single target: node-exporter on the docker-compose internal network.
+# Self-scrape was dropped to keep this file secret-free — adding it back
+# would force basic_auth credentials inline, which is awkward to template.
+# When stage 2 (zhitu-agent-java metrics) is added later, append a job
+# pointing at host.docker.internal:8080/actuator/prometheus over a reverse
+# SSH tunnel.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          host: cloud-106-12-190-62
