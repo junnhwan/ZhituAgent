@@ -4,17 +4,20 @@
 
 ## TL;DR
 
-zhitu-agent-java = 用户 Agent 实习的核心作品集项目。**阶段 2 ✅ 完成**(19 commit)+ **阶段 3 v3 ES 栈 M1+M2+M3 ✅ 完成**(6 commit / 217 单测 + 4 Kafka IT / 真实云端 smoke 通过)。
+zhitu-agent-java = 用户 Agent 实习的核心作品集项目。**所有代码阶段 ✅ 完成**:阶段 2(19 commit)+ 阶段 3 v3 ES 栈 M1-M5(8 commit)+ v3-eval(3 commit)+ multi-agent SRE Phase 1+2。**217 单测 + 4 Kafka IT 全绿,真实云端 smoke + C-MTEB rerank ablation 通过**。
 
-栈:Java 21 + Spring Boot 3.5 + LangChain4j 1.1 + **Elasticsearch 8.10 + IK** + Redis + **MinIO + Tika + HanLP** + **Kafka 3.7 KRaft** + React/TS。云中间件部署在 106.12.190.62 docker(`infra/cloud/`,Kafka 已在跑)。
+栈:Java 21 + Spring Boot 3.5 + LangChain4j 1.1 + **Elasticsearch 8.10 + IK** + Redis + **MinIO + Tika + HanLP** + **Kafka 3.7 KRaft** + React/TS。云中间件部署在 106.12.190.62 docker(`infra/cloud/`,Kafka 已在跑,**ES 启用 xpack 认证**)。
 
 **当前可讲故事**:
 - 阶段 2: 评测体系拍出 fusion silent bug → 一行修复 → 重跑 v2 p90 latency -25%
 - 阶段 3 M1+M2: pgvector 退役 → ES native hybrid(KNN+IK BM25+rescore 单次调用)+ MinIO+Tika+Redis bitmap 同步入库管线
 - 阶段 3 M3: Kafka KRaft 异步管线 — 上传立即 202,consumer 跑 Tika+embed+ES bulk;producer 事务 + idempotent + DLT 重试;at-least-once + ES `_id=chunkId` = exactly-once-effect
+- 阶段 3 M4+M5: surefire/failsafe IT 拆分 + sync vs async perf bench
+- **v3-eval**: C-MTEB T2Retrieval rerank ablation — Qwen3-Reranker-8B 在采样 fixture 上 +5.6 pp nDCG@10 但 3.8x p50 latency,据此落地 SLA-aware 检索决策。**主动声明 sampling 边界**(corpus 2K vs 完整 118K),不对标 leaderboard
 - **🔥 叙事更正**: routeAcc +0.20 提升 **不是 ES 功劳是 multi-agent SRE Phase 1 commit**(4 个 SRE case 全 False→全 True)。ES + Kafka 价值在工程深度(IK/KNN/真 hybrid/事务异步管线),不在数字。
+- **🔥 ransomware 加固**(2026-05-03):公网无认证 ES 被 bot 17min 删光索引,加 xpack auth + IP 白名单。事件已写进 `infra/cloud/docker-compose.yml` 注释 + user memory `feedback_infra_security.md`
 
-下一步: M4(failsafe IT 拆分 ✅ 完成 / docs 刷新中)→ M5 sync vs async perf 微基准 + resume 叙事段落。
+下一步: **代码全部完成,进入包装层(README + demo flow)+ 简历层(STAR 故事卡 + 简历段落)+ 学习层(用户自己读代码)**。不再追加新功能。
 
 ## 协作模式(重要)
 
@@ -28,7 +31,7 @@ zhitu-agent-java = 用户 Agent 实习的核心作品集项目。**阶段 2 ✅ 
 
 ## 关键文档(按重要度)
 
-1. **`optimize-progress.md`** — 项目主进度,完整 A-1..A-7 + 简历叙事框架最终版(⚠️ 阶段 3 部分待补,routeAcc 归因需更正)
+1. **`optimize-progress.md`** — 项目主进度,完整 A-1..A-7 + 阶段 3 M1-M5 + v3-eval + 简历叙事框架最终版
 2. **user memory** `~/.claude/projects/D--dev-my-proj-java-zhitu-agent-java/memory/`
    - `MEMORY.md` 索引
    - `project_v3_es_stack.md` ⭐ **当前阶段 3 进度** + 续接 prompt + 5 commit 表 + routeAcc 真相
@@ -103,17 +106,22 @@ mvn -o spring-boot:run -Dspring-boot.run.profiles=local \
 - **`exit-after-run=true` 跳过 ApplicationReadyEvent**:active stores 启动日志用 `ApplicationStartedEvent` 才能在 BaselineEvalRunner.System.exit 之前打印
 - **失败安全 IT**:Kafka/ES Testcontainers IT 标 `@Tag("integration")` + 文件名 `*IntegrationTest.java`;`mvn test` 排除,`mvn verify` 包含;无 Docker 时 `disabledWithoutDocker=true` 自动跳过
 
-## 当前状态速查(2026-05-03)
+## 当前状态速查(2026-05-04)
 
 - ✅ 阶段 2 完整: 19 commit + 122 单测基线 + v2 p90 -25%
+- ✅ multi-agent SRE Phase 1+2: routing 真功臣(routeAcc +0.20)+ SSE 流式 demo UI
 - ✅ v3 M1: ES + IK + KnowledgeStore swap (commit `3df2de7`)
 - ✅ v3 M2: 同步上传管线 (commit `0a8ebb1` `c65aaf9` `7940bb6` `3051569`)
 - ✅ v3 M3: Kafka KRaft 异步管线 (commit `1b4a36a`) — producer 事务 + DLT + idempotent
+- ✅ v3 M4: surefire/failsafe IT 拆分 (commit `218b691`)
+- ✅ v3 M5: sync vs async perf bench + 简历叙事段 (commit `7afed05`)
+- ✅ v3-eval: C-MTEB rerank ablation + sampling 诚实声明 (commit `88d3d13` `3622af8` `9032e33`)
 - ✅ 217/217 单测全绿(`mvn test`)+ 4 Kafka IT 通过 `mvn verify`(本地无 Docker 自动 skip)
 - ✅ 真实云端 smoke 通过(`docs/m2-smoke-sample.txt` → ES 命中)
+- ✅ ES 启用 xpack 认证(2026-05-03 ransomware 事件后强制)+ 安全组 IP 白名单
 - ⚠️ **routeAcc +0.20 真功臣是 multi-agent SRE Phase 1 不是 ES** — 见 `project_v3_es_stack.md`
-- 🔄 M4: failsafe IT 拆分 ✅ 完成,文档刷新 ✅ 完成
-- ⏳ M5: sync vs async perf 微基准 + resume 叙事 (~1d)
+
+**所有代码 milestone 已完成**。下一步是包装(README / demo flow)+ 简历(STAR + bullet)+ 学习(读代码),不再追加新功能。
 
 **下次会话续接**: 看 `project_v3_es_stack.md` 续接 prompt + git log -10 + plan 文件。
 
@@ -130,3 +138,8 @@ mvn -o spring-boot:run -Dspring-boot.run.profiles=local \
 | 协议接入 | 只有内置工具 | MCP McpClient interface + adapter pattern + late-binding | MCP | MCP |
 | 前端 | 扁平默认 | tokens + hash hue + iMessage 气泡 + 引导卡 + Trace 折叠 | Linear / Stripe / ChatGPT | UI |
 | **eval 闭环** | **代码已落地缺数字** | **真 LLM baseline + 拍出 fusion silent bug + 一行修复 + 重跑闭环** | **BEIR holdout / 工程师 root cause debug** | **A-5 / A-6 / A-7** |
+| **v3 检索栈** | dense + ILIKE 伪 hybrid | ES 8.10 + IK + KNN+BM25+rescore 单次调用 native hybrid | Elastic / Vespa | M1 |
+| **v3 入库管线** | 单条 Q:A 调 splitter | MinIO + Tika 15 格式 + 分片续传 + 内存熔断 → 同步落 ES | LangChain / LlamaIndex DocLoader | M2 |
+| **v3 异步** | 同步阻塞 | Kafka KRaft + 事务 producer + idempotent + DLT + ES `_id=chunkId` 幂等 = exactly-once-effect | Confluent / Stripe ledger | M3 |
+| **v3 测试治理** | 单一 `mvn test` | surefire/failsafe IT 拆分 + 无 Docker 自动 skip | Spring Boot 官方 / Testcontainers 推荐 | M4 |
+| **v3-eval** | 自造 query 集 | C-MTEB T2Retrieval 公开 benchmark + rerank ablation + 主动 sampling 边界声明 | C-MTEB / MTEB / pytrec_eval | v3-eval |
