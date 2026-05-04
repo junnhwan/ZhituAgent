@@ -54,7 +54,9 @@ public class McpProperties {
      * One real MCP server's connection params. Most fields are transport-specific:
      * <ul>
      *   <li>stdio: {@link #command}, {@link #args}, {@link #env}</li>
-     *   <li>streamable-http: {@link #url}, optionally {@link #env} for headers</li>
+     *   <li>streamable-http: {@link #url}, optionally {@link #headers} for auth /
+     *       custom request headers (e.g. {@code Authorization: Bearer ...} for
+     *       hosted MCP servers like Baidu Qianfan)</li>
      * </ul>
      */
     public static class ServerConfig {
@@ -70,6 +72,13 @@ public class McpProperties {
         private Map<String, String> env = new LinkedHashMap<>();
         /** streamable-http: server endpoint URL. */
         private String url;
+        /**
+         * streamable-http: HTTP request headers injected on every JSON-RPC call
+         * via {@code McpSyncHttpClientRequestCustomizer}. Typically used for
+         * {@code Authorization: Bearer ${TOKEN}} on hosted MCP servers.
+         * Ignored on stdio transport.
+         */
+        private Map<String, String> headers = new LinkedHashMap<>();
 
         public String getName() {
             return name;
@@ -117,6 +126,14 @@ public class McpProperties {
 
         public void setUrl(String url) {
             this.url = url;
+        }
+
+        public Map<String, String> getHeaders() {
+            return headers;
+        }
+
+        public void setHeaders(Map<String, String> headers) {
+            this.headers = headers == null ? new LinkedHashMap<>() : headers;
         }
     }
 }

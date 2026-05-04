@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <p>If {@code zhitu.mcp.enabled=false} (default) this component does nothing,
  * keeping production parity with the pre-MCP behaviour. Flip the flag to bring
- * the {@code mock-mcp.*} tools into the LLM's function-calling vocabulary.
+ * the {@code mock-mcp__*} tools into the LLM's function-calling vocabulary.
  */
 @Component
 public class McpToolRegistrar {

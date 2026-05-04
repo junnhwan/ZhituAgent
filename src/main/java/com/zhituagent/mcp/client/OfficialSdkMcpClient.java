@@ -5,7 +5,15 @@ import com.zhituagent.mcp.McpCallResult;
 import com.zhituagent.mcp.McpClient;
 import com.zhituagent.mcp.McpProperties;
 import com.zhituagent.mcp.McpToolSpec;
+import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
+import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
+import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
@@ -96,7 +104,7 @@ public class OfficialSdkMcpClient implements McpClient {
         return switch (transportType) {
             case "stdio" -> {
                 List<String> args = cfg.getArgs() == null ? List.of() : cfg.getArgs();
-                ServerParameters.Builder paramsBuilder = ServerParameters.builder(cfg.getCommand())
+                ServerParameters.Builder paramsBuilder = ServerParameters.builder(resolveCommand(cfg.getCommand()))
                         .args(args.toArray(String[]::new));
                 if (cfg.getEnv() != null && !cfg.getEnv().isEmpty()) {
                     paramsBuilder.env(cfg.getEnv());
@@ -108,10 +116,19 @@ public class OfficialSdkMcpClient implements McpClient {
                     throw new IllegalArgumentException(
                             "streamable-http transport requires url for server: " + cfg.getName());
                 }
-                yield HttpClientStreamableHttpTransport
+                HttpClientStreamableHttpTransport.Builder httpBuilder = HttpClientStreamableHttpTransport
                         .builder(cfg.getUrl())
-                        .jsonMapper(JSON_MAPPER)
-                        .build();
+                        .jsonMapper(JSON_MAPPER);
+                Map<String, String> headers = cfg.getHeaders();
+                if (headers != null && !headers.isEmpty()) {
+                    // Inject configured headers (e.g. Authorization: Bearer ${TOKEN})
+                    // on every JSON-RPC HTTP request. The customizer is called once
+                    // per request — cheap, thread-safe, no state to manage.
+                    httpBuilder.httpRequestCustomizer(
+                            (requestBuilder, method, uri, body, ctx) ->
+                                    headers.forEach(requestBuilder::header));
+                }
+                yield httpBuilder.build();
             }
             default -> throw new IllegalArgumentException(
                     "unsupported MCP transport: " + cfg.getTransport()
@@ -185,6 +202,29 @@ public class OfficialSdkMcpClient implements McpClient {
         }
     }
 
+    /**
+     * Resolve a stdio command to its OS-specific executable name. On Windows,
+     * npm-installed shims ({@code npx}, {@code npm}, {@code yarn}, {@code pnpm})
+     * are {@code .cmd} batch scripts rather than {@code .exe} files — Java's
+     * {@link ProcessBuilder} cannot start them without the explicit suffix and
+     * fails with {@code Failed to start process}. Real executables such as
+     * {@code uvx.exe} / {@code python.exe} / {@code java.exe} are passed
+     * through unchanged. On non-Windows platforms this is a no-op.
+     */
+    private static String resolveCommand(String command) {
+        if (command == null) {
+            return null;
+        }
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (!osName.startsWith("windows")) {
+            return command;
+        }
+        return switch (command) {
+            case "npx", "npm", "yarn", "pnpm" -> command + ".cmd";
+            default -> command;
+        };
+    }
+
     private static String collapseContent(List<Content> contents) {
         if (contents == null || contents.isEmpty()) {
             return "";
@@ -218,31 +258,176 @@ public class OfficialSdkMcpClient implements McpClient {
         if (schemaMap == null) {
             return JsonObjectSchema.builder().build();
         }
+        return convertObjectSchema(schemaMap);
+    }
+
+    /**
+     * Convert a JSON Schema object node into a langchain4j {@link JsonObjectSchema}.
+     * Handles {@code properties} (per-property type-aware conversion via
+     * {@link #convertElement}), {@code required}, top-level {@code description},
+     * and {@code additionalProperties}. Used for both the tool root schema and
+     * any nested object property.
+     */
+    @SuppressWarnings("unchecked")
+    private static JsonObjectSchema convertObjectSchema(Map<String, Object> schemaMap) {
         JsonObjectSchema.Builder builder = JsonObjectSchema.builder();
+        Object desc = schemaMap.get("description");
+        if (desc != null) {
+            builder.description(String.valueOf(desc));
+        }
         Object propsObj = schemaMap.get("properties");
         if (propsObj instanceof Map<?, ?> props) {
             for (Map.Entry<?, ?> entry : props.entrySet()) {
                 String propName = String.valueOf(entry.getKey());
-                String description = "";
                 if (entry.getValue() instanceof Map<?, ?> propSpec) {
-                    Object desc = propSpec.get("description");
-                    if (desc != null) {
-                        description = String.valueOf(desc);
-                    }
+                    JsonSchemaElement propSchema = convertElement((Map<String, Object>) propSpec);
+                    builder.addProperty(propName, propSchema);
                 }
-                // Simplify all properties to string; LLM adapts via description.
-                // Trade-off: lose strict typing but avoid full JSON Schema 2020-12
-                // → langchain4j JsonObjectSchema mapping (the latter doesn't
-                // model nested objects/arrays/oneOf/etc. cleanly enough for
-                // arbitrary MCP tool schemas).
-                builder.addStringProperty(propName, description);
             }
         }
         Object reqObj = schemaMap.get("required");
         if (reqObj instanceof List<?> req && !req.isEmpty()) {
-            String[] required = req.stream().map(String::valueOf).toArray(String[]::new);
-            builder.required(required);
+            builder.required(req.stream().map(String::valueOf).toArray(String[]::new));
+        }
+        Object addProps = schemaMap.get("additionalProperties");
+        if (addProps instanceof Boolean b) {
+            builder.additionalProperties(b);
         }
         return builder.build();
+    }
+
+    /**
+     * Convert a single JSON Schema property/element node into the matching
+     * langchain4j {@link JsonSchemaElement}. Resolution order matters:
+     * <ol>
+     *   <li>Composition keywords ({@code oneOf} / {@code anyOf} / {@code allOf})
+     *       collapse into {@link JsonAnyOfSchema} — strict {@code allOf} merging
+     *       isn't supported by langchain4j 1.1, so we treat it as anyOf for
+     *       LLM-facing purposes (the server still validates strictly).</li>
+     *   <li>{@code enum} without explicit type → {@link JsonEnumSchema} with
+     *       string values (JSON Schema's default).</li>
+     *   <li>Multi-type {@code "type": ["string", "boolean"]} → {@link JsonAnyOfSchema}
+     *       wrapping each type's bare schema.</li>
+     *   <li>Single type → matching primitive schema. Arrays recurse on
+     *       {@code items}, objects recurse on {@link #convertObjectSchema}.</li>
+     *   <li>Unknown / missing type → {@link JsonStringSchema} fallback so the
+     *       LLM still sees the description, never a blank parameter.</li>
+     * </ol>
+     * <p>This replaces the earlier "everything is a string" simplification that
+     * caused real MCP servers (Tavily etc.) to reject calls because boolean /
+     * enum-typed parameters arrived as plain strings.
+     */
+    @SuppressWarnings("unchecked")
+    private static JsonSchemaElement convertElement(Map<String, Object> propMap) {
+        String description = propMap.get("description") == null ? null : String.valueOf(propMap.get("description"));
+
+        // Composition: oneOf / anyOf / allOf — fold all alternatives into anyOf.
+        List<Map<String, Object>> alternatives = extractAlternatives(propMap);
+        if (alternatives != null && !alternatives.isEmpty()) {
+            List<JsonSchemaElement> subs = alternatives.stream()
+                    .map(OfficialSdkMcpClient::convertElement)
+                    .toList();
+            JsonAnyOfSchema.Builder anyOfBuilder = JsonAnyOfSchema.builder().anyOf(subs);
+            if (description != null) {
+                anyOfBuilder.description(description);
+            }
+            return anyOfBuilder.build();
+        }
+
+        // Enum without explicit type → string-valued enum (JSON Schema convention).
+        if (propMap.get("enum") instanceof List<?> enumValues && !enumValues.isEmpty()
+                && !(propMap.get("type") instanceof List<?>)) {
+            List<String> stringEnums = enumValues.stream().map(String::valueOf).toList();
+            JsonEnumSchema.Builder enumBuilder = JsonEnumSchema.builder().enumValues(stringEnums);
+            if (description != null) {
+                enumBuilder.description(description);
+            }
+            return enumBuilder.build();
+        }
+
+        Object typeObj = propMap.get("type");
+
+        // Multi-type union ("type": ["string", "boolean"]) → anyOf each type.
+        if (typeObj instanceof List<?> typeList && !typeList.isEmpty()) {
+            List<JsonSchemaElement> subs = typeList.stream()
+                    .map(t -> {
+                        Map<String, Object> sub = new LinkedHashMap<>(propMap);
+                        sub.put("type", String.valueOf(t));
+                        return convertElement(sub);
+                    })
+                    .toList();
+            JsonAnyOfSchema.Builder anyOfBuilder = JsonAnyOfSchema.builder().anyOf(subs);
+            if (description != null) {
+                anyOfBuilder.description(description);
+            }
+            return anyOfBuilder.build();
+        }
+
+        String type = typeObj == null ? null : String.valueOf(typeObj);
+        return switch (type == null ? "" : type) {
+            case "string" -> {
+                JsonStringSchema.Builder b = JsonStringSchema.builder();
+                if (description != null) b.description(description);
+                yield b.build();
+            }
+            case "boolean" -> {
+                JsonBooleanSchema.Builder b = JsonBooleanSchema.builder();
+                if (description != null) b.description(description);
+                yield b.build();
+            }
+            case "integer" -> {
+                JsonIntegerSchema.Builder b = JsonIntegerSchema.builder();
+                if (description != null) b.description(description);
+                yield b.build();
+            }
+            case "number" -> {
+                JsonNumberSchema.Builder b = JsonNumberSchema.builder();
+                if (description != null) b.description(description);
+                yield b.build();
+            }
+            case "array" -> {
+                JsonArraySchema.Builder b = JsonArraySchema.builder();
+                if (description != null) b.description(description);
+                Object itemsObj = propMap.get("items");
+                if (itemsObj instanceof Map<?, ?> itemsMap) {
+                    b.items(convertElement((Map<String, Object>) itemsMap));
+                } else {
+                    // items missing or non-object — default to string items so
+                    // langchain4j's required-items invariant is satisfied.
+                    b.items(JsonStringSchema.builder().build());
+                }
+                yield b.build();
+            }
+            case "object" -> convertObjectSchema(propMap);
+            default -> {
+                // null / unknown type — keep the description visible to the LLM
+                // by surfacing as a string property rather than dropping silently.
+                JsonStringSchema.Builder b = JsonStringSchema.builder();
+                if (description != null) b.description(description);
+                yield b.build();
+            }
+        };
+    }
+
+    /**
+     * Pull the list of sub-schemas out of {@code oneOf}, {@code anyOf}, or
+     * {@code allOf} (whichever appears first). Returns {@code null} if none
+     * present, an empty list if the keyword exists but has no entries.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractAlternatives(Map<String, Object> propMap) {
+        for (String key : List.of("oneOf", "anyOf", "allOf")) {
+            Object alts = propMap.get(key);
+            if (alts instanceof List<?> list && !list.isEmpty()) {
+                List<Map<String, Object>> result = new ArrayList<>(list.size());
+                for (Object alt : list) {
+                    if (alt instanceof Map<?, ?> altMap) {
+                        result.add((Map<String, Object>) altMap);
+                    }
+                }
+                return result;
+            }
+        }
+        return null;
     }
 }

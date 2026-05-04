@@ -38,8 +38,8 @@ class McpToolRegistrarTest {
         int registered = registrar.registerDiscoveredTools();
 
         assertThat(registered).isEqualTo(4); // 2 tools × 2 servers
-        assertThat(registry.names()).contains("server-a.calculator", "server-a.weather_lookup",
-                "server-b.calculator", "server-b.weather_lookup");
+        assertThat(registry.names()).contains("server-a__calculator", "server-a__weather_lookup",
+                "server-b__calculator", "server-b__weather_lookup");
     }
 
     @Test
@@ -64,7 +64,7 @@ class McpToolRegistrarTest {
 
         registrar.registerDiscoveredTools();
 
-        Optional<ToolDefinition> calculator = registry.find("special-server.calculator");
+        Optional<ToolDefinition> calculator = registry.find("special-server__calculator");
         assertThat(calculator).isPresent();
         assertThat(calculator.get().description()).contains("[mcp:special-server]");
     }
@@ -77,7 +77,7 @@ class McpToolRegistrarTest {
         new McpToolRegistrar(registry, properties,
                 singletonProvider(List.of(new MockMcpClient()))).registerDiscoveredTools();
 
-        ToolDefinition calculator = registry.find("mock-mcp.calculator").orElseThrow();
+        ToolDefinition calculator = registry.find("mock-mcp__calculator").orElseThrow();
         var result = calculator.execute(Map.of("expression", "12 * (3 + 4)"));
 
         assertThat(result.success()).isTrue();

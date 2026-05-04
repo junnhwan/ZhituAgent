@@ -17,13 +17,25 @@ import java.util.Map;
  * HITL approval gate), and the LLM function-calling spec exporter without
  * special-casing.
  *
- * <p>Tool name is prefixed with the originating MCP server name (e.g.
- * {@code mock-mcp.calculator}) to avoid colliding with locally-registered tool
- * names and to keep the source obvious in trace spans.
+ * <p>Tool name is prefixed with the originating MCP server name using a
+ * double-underscore separator (e.g. {@code tavily__tavily_search}) — chosen
+ * because OpenAI / GLM / most function-calling LLMs require tool names to
+ * match {@code ^[a-zA-Z0-9_-]+$} (no dots allowed). Double underscore is the
+ * de-facto MCP namespacing convention used by Anthropic / Spring AI as well,
+ * and is unambiguous because real MCP tool names use single underscores.
  */
 public class McpToolAdapter implements ToolDefinition {
 
     private static final Logger log = LoggerFactory.getLogger(McpToolAdapter.class);
+
+    /**
+     * Separator between MCP server name and tool name in {@link #qualifiedName}.
+     * MUST match the {@code ^[a-zA-Z0-9_-]+$} pattern enforced by OpenAI-compat
+     * function-calling APIs (GLM, Anthropic, OpenAI). Single underscore would
+     * collide with MCP tool names that already contain underscores; dot is
+     * forbidden by the pattern.
+     */
+    static final String SERVER_TOOL_SEPARATOR = "__";
 
     private final McpClient client;
     private final McpToolSpec spec;
@@ -32,7 +44,7 @@ public class McpToolAdapter implements ToolDefinition {
     public McpToolAdapter(McpClient client, McpToolSpec spec) {
         this.client = client;
         this.spec = spec;
-        this.qualifiedName = client.name() + "." + spec.name();
+        this.qualifiedName = client.name() + SERVER_TOOL_SEPARATOR + spec.name();
     }
 
     @Override
