@@ -80,6 +80,14 @@ function SpanNode({
           )}
         </span>
         <span className="span-name">{node.span.name}</span>
+        {node.span.attributes?.source === "mcp" && (
+          <span
+            className="span-mcp-badge"
+            title={`MCP server: ${String(node.span.attributes?.mcpServer ?? "?")} · transport: ${String(node.span.attributes?.mcpTransport ?? "stdio")}`}
+          >
+            🔌 MCP
+          </span>
+        )}
         <span className="span-kind">{node.span.kind}</span>
         <span className="span-duration">{Math.max(node.durationMs, 0)}ms</span>
         <span className={`span-status-badge span-status-${node.span.status}`}>

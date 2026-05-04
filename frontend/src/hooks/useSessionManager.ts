@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { createSession, getSession } from "../api/sessions";
-import type { SessionState, MessageState, StreamingPhase, StreamingError } from "./types";
+import type { SessionState, MessageState, StreamingPhase, StreamingError, ToolCallState } from "./types";
 
 export interface AppState {
   sessions: SessionState[];
@@ -16,6 +16,8 @@ export type AppAction =
   | { type: "UPDATE_STREAMING_PHASE"; payload: { sessionId: string; phase: StreamingPhase; toolName?: string } }
   | { type: "FINALIZE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string } }
   | { type: "MARK_STREAMING_ERROR"; payload: { sessionId: string; error: StreamingError } }
+  | { type: "ADD_TOOL_CALL"; payload: { sessionId: string; toolCall: ToolCallState } }
+  | { type: "UPDATE_TOOL_CALL"; payload: { sessionId: string; toolCallId: string; patch: Partial<ToolCallState> } }
   | { type: "SET_SENDING"; payload: boolean }
   | { type: "LOAD_SESSION_DETAIL"; payload: { sessionId: string; messages: MessageState[]; summary: string | null; facts: string[] } }
   | { type: "RESTORE_SESSION"; payload: SessionState };
@@ -87,6 +89,48 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
           msgs[msgs.length - 1] = { ...last, isStreaming: false, phase: undefined, error: action.payload.error };
+        }
+        return { ...s, messages: msgs };
+      });
+      return { ...state, sessions };
+    }
+
+    case "ADD_TOOL_CALL": {
+      // Append a new ToolCallState to the currently-streaming assistant message
+      // (the last message in the session). No-op if no streaming target exists
+      // — backend should never emit tool_start without an assistant message
+      // already added, but guard for safety.
+      const sessions = state.sessions.map((s) => {
+        if (s.sessionId !== action.payload.sessionId) return s;
+        const msgs = [...s.messages];
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming) {
+          const existing = last.toolCalls ?? [];
+          msgs[msgs.length - 1] = {
+            ...last,
+            toolCalls: [...existing, action.payload.toolCall],
+          };
+        }
+        return { ...s, messages: msgs };
+      });
+      return { ...state, sessions };
+    }
+
+    case "UPDATE_TOOL_CALL": {
+      // Patch a specific ToolCallState by toolCallId on the streaming message.
+      // Used by tool_end to flip status running → success/error and add timing
+      // / resultPreview. Falls back to no-op if the call wasn't registered.
+      const sessions = state.sessions.map((s) => {
+        if (s.sessionId !== action.payload.sessionId) return s;
+        const msgs = [...s.messages];
+        const last = msgs[msgs.length - 1];
+        if (last?.isStreaming && last.toolCalls) {
+          const updated = last.toolCalls.map((tc) =>
+            tc.toolCallId === action.payload.toolCallId
+              ? { ...tc, ...action.payload.patch }
+              : tc,
+          );
+          msgs[msgs.length - 1] = { ...last, toolCalls: updated };
         }
         return { ...s, messages: msgs };
       });

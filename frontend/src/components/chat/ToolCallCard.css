@@ -1,0 +1,131 @@
+.tcc {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: rgba(99, 102, 241, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 8px;
+  font-size: 12px;
+  transition: background 0.2s, border-color 0.2s;
+}
+.tcc-running {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+.tcc-success {
+  background: rgba(34, 197, 94, 0.05);
+  border-color: rgba(34, 197, 94, 0.20);
+}
+.tcc-error {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.tcc-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tcc-status-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.tcc-running .tcc-status-icon { color: #3b82f6; }
+.tcc-success .tcc-status-icon { color: #22c55e; }
+.tcc-error .tcc-status-icon { color: #ef4444; }
+
+.tcc-spin {
+  animation: tcc-spin 0.9s linear infinite;
+}
+@keyframes tcc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tcc-mcp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: rgba(99, 102, 241, 0.14);
+  color: #4f46e5;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.tcc-mcp-label {
+  font-weight: 700;
+}
+.tcc-server-name {
+  margin-left: 2px;
+  font-weight: 500;
+  color: #6366f1;
+}
+
+.tcc-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--text-strong, #1f2937);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.tcc-status-text {
+  color: var(--text-muted, #6b7280);
+  font-size: 11px;
+  font-style: italic;
+}
+.tcc-error-text {
+  color: #ef4444;
+  font-style: normal;
+  font-weight: 500;
+}
+.tcc-duration {
+  margin-left: auto;
+  color: var(--text-muted, #9ca3af);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tcc-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--text-muted, #9ca3af);
+}
+.tcc-duration + .tcc-toggle {
+  margin-left: 4px;
+}
+
+.tcc-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(99, 102, 241, 0.2);
+  overflow: hidden;
+}
+.tcc-section {
+  margin-bottom: 6px;
+}
+.tcc-section:last-child {
+  margin-bottom: 0;
+}
+.tcc-section-label {
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+.tcc-args, .tcc-result {
+  margin: 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-strong, #1f2937);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}

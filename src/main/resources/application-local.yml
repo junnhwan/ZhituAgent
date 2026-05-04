@@ -45,3 +45,54 @@ zhitu:
     child-chunk-size: ${ZHITU_FILE_CHILD_CHUNK_SIZE:512}
     chunk-overlap: ${ZHITU_FILE_CHUNK_OVERLAP:64}
     memory-threshold: ${ZHITU_FILE_MEMORY_THRESHOLD:0.8}
+  mcp:
+    # Set ZHITU_MCP_ENABLED=true to wire 4 real MCP servers (Tavily / Baidu /
+    # Filesystem / Prometheus) into the LLM's function-calling vocabulary.
+    # When false (default) the MockMcpClient is not registered either — the
+    # whole MCP path is dormant. When true with empty `servers`, falls back to
+    # MockMcpClient so the demo path still works.
+    enabled: ${ZHITU_MCP_ENABLED:false}
+    servers:
+      # Tavily — AI-optimized international web search. 1000 free queries/month.
+      # https://tavily.com → API key. stdio via npx.
+      - name: tavily
+        transport: stdio
+        command: npx
+        args:
+          - "-y"
+          - "tavily-mcp@latest"
+        env:
+          TAVILY_API_KEY: ${TAVILY_API_KEY:}
+
+      # Baidu Search — official Chinese search via Baidu Qianfan AppBuilder.
+      # Streamable HTTP transport (MCP spec 2025-06-18 new transport).
+      # Free tier from https://console.bce.baidu.com/qianfan/ → create app → get
+      # API Key + Secret Key. Endpoint may need adjustment per docs.
+      - name: baidu
+        transport: streamable-http
+        url: ${BAIDU_MCP_URL:https://qianfan.baidubce.com/v2/mcp/baidu-search}
+        env:
+          BAIDU_API_KEY: ${BAIDU_API_KEY:}
+          BAIDU_SECRET_KEY: ${BAIDU_SECRET_KEY:}
+
+      # Filesystem — official MCP reference server. No API key. Reads files
+      # under MCP_FS_ROOT (default /tmp). Useful demo for SRE agent reading
+      # runbooks / log files.
+      - name: filesystem
+        transport: stdio
+        command: npx
+        args:
+          - "-y"
+          - "@modelcontextprotocol/server-filesystem"
+          - ${MCP_FS_ROOT:/tmp}
+
+      # Prometheus — query metrics from a Prometheus instance. Pairs with the
+      # multi-agent SRE narrative (PromQL execute_query / range_query).
+      # Started via uvx (Python). Optional — comment out if uvx unavailable.
+      - name: prometheus
+        transport: stdio
+        command: uvx
+        args:
+          - "prometheus-mcp-server"
+        env:
+          PROMETHEUS_URL: ${PROMETHEUS_URL:http://localhost:9090}

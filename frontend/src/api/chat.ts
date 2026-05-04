@@ -82,6 +82,26 @@ export function streamChat(
                 arguments: (payload.arguments ?? {}) as Record<string, unknown>,
               });
               break;
+            case "tool_start":
+              callbacks.onToolStart?.({
+                type: "tool_start",
+                toolCallId: payload.toolCallId,
+                name: payload.name,
+                source: payload.source ?? "builtin",
+                server: payload.server,
+                transport: payload.transport,
+                args: (payload.args ?? {}) as Record<string, unknown>,
+              });
+              break;
+            case "tool_end":
+              callbacks.onToolEnd?.({
+                type: "tool_end",
+                toolCallId: payload.toolCallId,
+                status: (payload.status === "error" ? "error" : "success"),
+                durationMs: payload.durationMs ?? 0,
+                resultPreview: payload.resultPreview ?? "",
+              });
+              break;
             case "complete":
               settled = true;
               callbacks.onComplete({

@@ -40,7 +40,43 @@ export interface PendingToolCall {
   arguments: Record<string, unknown>;
 }
 
-export type SseEvent = SseStartEvent | SseTokenEvent | SseCompleteEvent | SseErrorEvent | SseStageEvent;
+/**
+ * Tool invocation lifecycle — emitted by the backend right after the router
+ * decides to use a tool. Pair {@code tool_start} + {@code tool_end} share a
+ * {@code toolCallId} so the frontend can attach the result to the running
+ * card.
+ *
+ * <p>{@code source} is {@code "mcp"} for tools coming from an
+ * {@code OfficialSdkMcpClient} (the {@code source / mcpServer / mcpTransport}
+ * fields are populated by {@link McpToolAdapter} on the backend) or
+ * {@code "builtin"} for in-process tools.
+ */
+export interface SseToolStartEvent {
+  type: "tool_start";
+  toolCallId: string;
+  name: string;
+  source: string;
+  server?: string;
+  transport?: string;
+  args: Record<string, unknown>;
+}
+
+export interface SseToolEndEvent {
+  type: "tool_end";
+  toolCallId: string;
+  status: "success" | "error";
+  durationMs: number;
+  resultPreview: string;
+}
+
+export type SseEvent =
+  | SseStartEvent
+  | SseTokenEvent
+  | SseCompleteEvent
+  | SseErrorEvent
+  | SseStageEvent
+  | SseToolStartEvent
+  | SseToolEndEvent;
 
 export interface StreamCallbacks {
   onStart: (sessionId: string) => void;
@@ -49,4 +85,6 @@ export interface StreamCallbacks {
   onComplete: (trace: TraceInfo) => void;
   onError: (code: string, message: string, requestId?: string) => void;
   onToolCallPending?: (pending: PendingToolCall) => void;
+  onToolStart?: (event: SseToolStartEvent) => void;
+  onToolEnd?: (event: SseToolEndEvent) => void;
 }

@@ -17,6 +17,7 @@ import com.zhituagent.memory.MemoryService;
 import com.zhituagent.orchestrator.AgentOrchestrator;
 import com.zhituagent.orchestrator.RouteDecision;
 import com.zhituagent.session.SessionService;
+import com.zhituagent.tool.ToolResult;
 import com.zhituagent.trace.TraceArchiveService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -33,6 +34,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -125,6 +127,7 @@ public class ChatController {
 
                 if (routeDecision.toolUsed() && routeDecision.toolName() != null) {
                     emitStage(emitter, "calling-tool", Map.of("toolName", routeDecision.toolName()));
+                    emitToolLifecycle(emitter, routeDecision);
                 }
 
                 contextBundle = contextManager.build(
@@ -342,6 +345,71 @@ public class ChatController {
                     .data(writeJson(payload)));
         } catch (IOException ignored) {
             // Pending notification is best-effort; the trace also carries the same payload.
+        }
+    }
+
+    /**
+     * Emit a {@code tool_start} + {@code tool_end} pair for the tool invoked
+     * during this request, derived from the {@link RouteDecision}'s captured
+     * {@link ToolResult}. The current pipeline runs tools synchronously inside
+     * {@code agentOrchestrator.decide()} so by the time we emit, the call has
+     * already completed — we surface both lifecycle events back-to-back so the
+     * frontend can still render the {@code <ToolCallCard>} 4-state pill and
+     * 🔌 server badge for MCP-sourced tools.
+     *
+     * <p>Real per-tool latency would require {@code ToolCallExecutor} to accept
+     * a listener; that refactor is out of scope for this milestone.
+     */
+    private void emitToolLifecycle(SseEmitter emitter, RouteDecision routeDecision) {
+        if (routeDecision == null || !routeDecision.toolUsed() || routeDecision.toolName() == null) {
+            return;
+        }
+        ToolResult result = routeDecision.toolResult();
+        Map<String, Object> resultPayload = result == null || result.payload() == null
+                ? Map.of()
+                : result.payload();
+        String source = String.valueOf(resultPayload.getOrDefault("source", "builtin"));
+        String mcpServer = String.valueOf(resultPayload.getOrDefault("mcpServer", ""));
+        String mcpTransport = String.valueOf(resultPayload.getOrDefault("mcpTransport", ""));
+        String toolCallId = "call_" + System.nanoTime();
+        String toolName = routeDecision.toolName();
+
+        Map<String, Object> startPayload = new LinkedHashMap<>();
+        startPayload.put("toolCallId", toolCallId);
+        startPayload.put("name", toolName);
+        startPayload.put("source", source);
+        if (!mcpServer.isEmpty()) {
+            startPayload.put("server", mcpServer);
+        }
+        if (!mcpTransport.isEmpty()) {
+            startPayload.put("transport", mcpTransport);
+        }
+        // Raw args aren't surfaced through RouteDecision today; surface an empty
+        // map so the frontend's "args" section can render a placeholder.
+        startPayload.put("args", Map.of());
+
+        try {
+            emitter.send(SseEmitter.event()
+                    .name(SseEventType.TOOL_START.value())
+                    .data(writeJson(startPayload)));
+        } catch (IOException ignored) {
+            // tool_start is best-effort UX; failure here must not abort the stream.
+        }
+
+        Map<String, Object> endPayload = new LinkedHashMap<>();
+        endPayload.put("toolCallId", toolCallId);
+        endPayload.put("status", result != null && result.success() ? "success" : "error");
+        // Synthetic 0ms — single-pass pipeline doesn't track per-tool timing yet.
+        endPayload.put("durationMs", 0L);
+        String summary = result == null ? "" : (result.summary() == null ? "" : result.summary());
+        endPayload.put("resultPreview", summary.length() > 200 ? summary.substring(0, 200) + "..." : summary);
+
+        try {
+            emitter.send(SseEmitter.event()
+                    .name(SseEventType.TOOL_END.value())
+                    .data(writeJson(endPayload)));
+        } catch (IOException ignored) {
+            // tool_end is best-effort UX; failure here must not abort the stream.
         }
     }
 }

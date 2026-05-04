@@ -66,7 +66,9 @@ public class McpToolAdapter implements ToolDefinition {
         try {
             McpCallResult result = client.callTool(spec.name(), arguments);
             Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("source", "mcp");
             payload.put("mcpServer", client.name());
+            payload.put("mcpTransport", client.transport());
             payload.put("mcpTool", spec.name());
             payload.put("metadata", result.metadata());
             if (result.isError()) {
@@ -80,7 +82,12 @@ public class McpToolAdapter implements ToolDefinition {
                     qualifiedName,
                     false,
                     "mcp client failed: " + exception.getMessage(),
-                    Map.of("mcpServer", client.name(), "mcpTool", spec.name())
+                    Map.of(
+                            "source", "mcp",
+                            "mcpServer", client.name(),
+                            "mcpTransport", client.transport(),
+                            "mcpTool", spec.name()
+                    )
             );
         }
     }

@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MessageState, StreamingPhase } from "../../hooks/types";
 import StreamingCursor from "./StreamingCursor";
+import ToolCallCard from "./ToolCallCard";
 import "./ChatMessage.css";
 
 const PHASE_LABEL: Record<StreamingPhase, string> = {
@@ -60,6 +61,13 @@ export default function ChatMessage({
 
       <div className="cm-bubble-wrap">
         <div className="cm-bubble">
+          {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
+            <div className="cm-tool-calls">
+              {msg.toolCalls.map((tc) => (
+                <ToolCallCard key={tc.toolCallId} toolCall={tc} />
+              ))}
+            </div>
+          )}
           {isUser ? (
             <span className="cm-text">{msg.content}</span>
           ) : isError ? (

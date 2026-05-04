@@ -107,6 +107,37 @@ export function useStreamingChat(
               payload: { sessionId, phase, toolName: detail?.toolName },
             });
           },
+          onToolStart: (event) => {
+            dispatch({
+              type: "ADD_TOOL_CALL",
+              payload: {
+                sessionId,
+                toolCall: {
+                  toolCallId: event.toolCallId,
+                  name: event.name,
+                  source: event.source,
+                  server: event.server,
+                  transport: event.transport,
+                  args: event.args,
+                  status: "running",
+                },
+              },
+            });
+          },
+          onToolEnd: (event) => {
+            dispatch({
+              type: "UPDATE_TOOL_CALL",
+              payload: {
+                sessionId,
+                toolCallId: event.toolCallId,
+                patch: {
+                  status: event.status,
+                  durationMs: event.durationMs,
+                  resultPreview: event.resultPreview,
+                },
+              },
+            });
+          },
           onComplete: (trace: TraceInfo) => {
             cancelAnimationFrame(rafRef.current);
             dispatch({
