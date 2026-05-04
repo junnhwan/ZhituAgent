@@ -70,7 +70,32 @@ if [[ "$SKIP_GIT" != "true" ]]; then
     fi
 fi
 
-# ---- step 2: backend build --------------------------------------------
+# ---- step 2: frontend build (BEFORE backend) --------------------------
+# Vite writes its bundle straight into src/main/resources/static (see
+# frontend/vite.config.ts). That directory is then packaged into the
+# fat jar by mvn — so the order MUST be npm build → mvn package, or
+# you ship yesterday's frontend with today's backend code.
+if [[ "$SKIP_FRONTEND" == "true" ]]; then
+    log "skipping frontend (SKIP_FRONTEND=true)"
+elif [[ ! -d "$APP_DIR/frontend" ]]; then
+    warn "frontend/ missing — skipping"
+else
+    log "building frontend (npm ci + vite build → src/main/resources/static)"
+    pushd "$APP_DIR/frontend" >/dev/null
+    # ci over install: deterministic, fails on lockfile drift instead of
+    # silently mutating it. Matches what CI does.
+    npm ci --no-audit --no-fund
+    npm run build
+    popd >/dev/null
+    STATIC_DIR="$APP_DIR/src/main/resources/static"
+    if [[ -f "$STATIC_DIR/index.html" ]]; then
+        log "frontend bundle in place: $(du -sh "$STATIC_DIR" | cut -f1)"
+    else
+        die "vite build finished but $STATIC_DIR/index.html missing — check frontend/vite.config.ts outDir"
+    fi
+fi
+
+# ---- step 3: backend build (jar absorbs the static bundle above) ------
 log "building backend (mvn package, tests skipped — CI gates them)"
 # -o (offline) is intentional: every dep should already be in ~/.m2 from
 # CI or a prior deploy. If not, fall through to online build.
@@ -82,22 +107,6 @@ fi
 JAR_PATH=$(ls -t "$APP_DIR"/target/zhitu-agent-java-*.jar 2>/dev/null | head -1 || true)
 [[ -n "$JAR_PATH" && -f "$JAR_PATH" ]] || die "no jar produced at target/zhitu-agent-java-*.jar"
 log "built: $(basename "$JAR_PATH") ($(du -h "$JAR_PATH" | cut -f1))"
-
-# ---- step 3: frontend build -------------------------------------------
-if [[ "$SKIP_FRONTEND" == "true" ]]; then
-    log "skipping frontend (SKIP_FRONTEND=true)"
-elif [[ ! -d "$APP_DIR/frontend" ]]; then
-    warn "frontend/ missing — skipping"
-else
-    log "building frontend (npm ci + vite build)"
-    pushd "$APP_DIR/frontend" >/dev/null
-    # ci over install: deterministic, fails on lockfile drift instead of
-    # silently mutating it. Matches what CI does.
-    npm ci --no-audit --no-fund
-    npm run build
-    popd >/dev/null
-    log "frontend built: $(du -sh frontend/dist | cut -f1)"
-fi
 
 # ---- step 4: restart service ------------------------------------------
 log "restarting $SERVICE_NAME"
