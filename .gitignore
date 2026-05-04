@@ -18,3 +18,9 @@ docs/resume/
 20*-*.txt
 # Python venv used by tools/eval/fetch_cmteb.py (one-shot HF fixture loader)
 tools/eval/.venv/
+
+# Rendered deployment files — scripts/install.sh substitutes APP_DIR /
+# APP_USER / SERVER_NAME at install time; the rendered output bakes in
+# absolute server paths + chosen domain and must not be committed.
+infra/systemd/*.rendered.service
+infra/nginx/*.rendered.conf

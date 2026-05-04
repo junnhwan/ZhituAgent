@@ -1,0 +1,82 @@
+# zhitu-agent-java systemd unit
+#
+# Install via scripts/install.sh — that script substitutes APP_DIR / APP_USER
+# at install time and symlinks the result into /etc/systemd/system/.
+#
+# Runtime model:
+#   - Spring Boot fat jar runs as a long-lived service on the host.
+#   - .env (gitignored) is sourced via EnvironmentFile so secrets stay off
+#     the cmdline + journalctl.
+#   - Restart=on-failure with backoff handles transient ES/Kafka blips
+#     (the app exits non-zero on unrecoverable startup errors only;
+#     idle 6-min ES RST is already retried in-process).
+#   - Output goes to journal (journalctl -u zhitu-agent -f) — no log file
+#     rotation to manage. Spring Boot's own file appender stays on for
+#     /var/log/zhitu-agent/app.log if logback config sets it.
+
+[Unit]
+Description=Zhitu Agent Java (Spring Boot 3.5 + LangChain4j)
+Documentation=https://github.com/zhitu/zhitu-agent-java
+# Wait for network and (if installed) docker — middleware lives in docker
+# on the same host in the default deploy. Soft dependency: if docker is
+# absent the unit still starts (host-mode middleware not supported here
+# but cloud-mode .env still works, app just connects to 106.12.190.62).
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+
+# Source secrets + endpoints from project-root .env. Keys without values
+# are tolerated by Spring Boot (resolved as empty), so a partially-filled
+# .env won't block startup — startup logs will tell you what's missing.
+EnvironmentFile=__APP_DIR__/.env
+
+# JAR path is glob-resolved at install time so we don't bake the version
+# string in. If the version bumps in pom.xml, re-run scripts/install.sh
+# to refresh the symlink (or just deploy.sh — it rebuilds the same path).
+ExecStart=/usr/bin/java \
+    -XX:+UseG1GC \
+    -XX:MaxRAMPercentage=70.0 \
+    -Dfile.encoding=UTF-8 \
+    -jar __APP_DIR__/target/zhitu-agent-java-0.0.1-SNAPSHOT.jar \
+    --spring.profiles.active=local
+
+# Graceful shutdown: Spring Boot's SIGTERM handler drains in-flight HTTP
+# requests + flushes Kafka producer transactions. 30s ceiling matches the
+# Kafka transaction timeout in our producer config so we never SIGKILL
+# mid-commit.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=10s
+# Cap restart storms — if the app crashes 5 times in 60s something's
+# fundamentally broken (bad .env, ES down, etc.); give the operator a
+# chance to look instead of burning CPU.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Resource ceilings. The Java app itself wants ~1G heap; ES connections
+# + Kafka producer batches push fd usage past the 1024 default fast.
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Hardening — defence in depth, project handles ES ransomware fallout
+# already, no reason to leave the service process less locked-down.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# /var/log/zhitu-agent for logback file appender, /tmp for Tika scratch
+ReadWritePaths=__APP_DIR__/logs /var/log/zhitu-agent
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zhitu-agent
+
+[Install]
+WantedBy=multi-user.target
