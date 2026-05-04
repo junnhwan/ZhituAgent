@@ -15,6 +15,7 @@ public class EvalProperties {
     private List<String> modes = new ArrayList<>(List.of("dense", "dense-rerank", "hybrid-rerank"));
     private String label = "";
     private List<String> compareLabels = new ArrayList<>();
+    private final Cmteb cmteb = new Cmteb();
 
     public boolean isEnabled() {
         return enabled;
@@ -70,5 +71,94 @@ public class EvalProperties {
 
     public void setCompareLabels(List<String> compareLabels) {
         this.compareLabels = compareLabels == null ? new ArrayList<>() : new ArrayList<>(compareLabels);
+    }
+
+    public Cmteb getCmteb() {
+        return cmteb;
+    }
+
+    public static class Cmteb {
+
+        private boolean enabled = false;
+        private String fixtureDir = "target/eval-fixtures/cmteb-t2";
+        private int chunkSize = 512;
+        private int chunkOverlap = 64;
+        private int topK = 10;
+        private int recallK = 5;
+        private String retrievalMode = "hybrid";
+        private String label = "v1";
+        private boolean skipIngest = false;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getFixtureDir() {
+            return fixtureDir;
+        }
+
+        public void setFixtureDir(String fixtureDir) {
+            this.fixtureDir = fixtureDir;
+        }
+
+        public int getChunkSize() {
+            return chunkSize;
+        }
+
+        public void setChunkSize(int chunkSize) {
+            this.chunkSize = chunkSize;
+        }
+
+        public int getChunkOverlap() {
+            return chunkOverlap;
+        }
+
+        public void setChunkOverlap(int chunkOverlap) {
+            this.chunkOverlap = chunkOverlap;
+        }
+
+        public int getTopK() {
+            return topK;
+        }
+
+        public void setTopK(int topK) {
+            this.topK = topK;
+        }
+
+        public int getRecallK() {
+            return recallK;
+        }
+
+        public void setRecallK(int recallK) {
+            this.recallK = recallK;
+        }
+
+        public String getRetrievalMode() {
+            return retrievalMode;
+        }
+
+        public void setRetrievalMode(String retrievalMode) {
+            this.retrievalMode = retrievalMode;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label == null ? "v1" : label;
+        }
+
+        public boolean isSkipIngest() {
+            return skipIngest;
+        }
+
+        public void setSkipIngest(boolean skipIngest) {
+            this.skipIngest = skipIngest;
+        }
     }
 }

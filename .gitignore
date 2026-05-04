@@ -16,3 +16,5 @@ archive/sessions/
 docs/resume/
 # Loose session logs dropped at repo root (date-prefixed .txt)
 20*-*.txt
+# Python venv used by tools/eval/fetch_cmteb.py (one-shot HF fixture loader)
+tools/eval/.venv/

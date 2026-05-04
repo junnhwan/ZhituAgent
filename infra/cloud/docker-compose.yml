@@ -3,11 +3,12 @@
 #   1. scp 整个 infra/cloud 目录到云服务器, 或 git clone 后 cd 进来
 #   2. cp .env.example .env, 填强密码 (32 位 random)
 #   3. docker compose up -d
-#   4. 防火墙白名单只放行你本地 IP, 端口: 9200 / 9092 / 6379 / 9000 / 9001 / 3306
+#   4. 防火墙白名单只放行你本地 IP, 端口: 9200 / 9092 / 6379 / 9100 / 9101 / 3306
 #   5. 演示完后 docker compose down 关闭, 别留长期暴露
 #
 # 安全提示:
-#   - ES/Kafka 没开 auth (开发简化), 完全靠 IP 白名单兜底
+#   - ES 已启用 xpack 认证 (2026-05-03 勒索事件后强制), 生产模式必须有强密码
+#   - Kafka 仍 PLAINTEXT (内网模式), 完全靠 IP 白名单兜底, 不要把 9092 暴露到公网
 #   - Redis/MinIO/MySQL 都加了密码
 #   - 任何端口对全互联网开放都是高危, IP 白名单是底线
 
@@ -17,7 +18,10 @@ services:
     container_name: zhitu-cloud-es
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ELASTIC_PASSWORD=${ES_PASSWORD}
       - ES_JAVA_OPTS=-Xms1g -Xmx1g
     ports:
       - "9200:9200"
