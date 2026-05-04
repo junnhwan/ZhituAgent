@@ -36,7 +36,13 @@ services:
       fi;
       exec /usr/local/bin/docker-entrypoint.sh elasticsearch"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      # xpack auth is on, so an unauthenticated curl gets 401 → exit 22 →
+      # container reports unhealthy forever even though ES is fine. Pass
+      # ELASTIC_PASSWORD on the auth header. Status filter accepts yellow
+      # because single-node ES is permanently yellow (replica shards
+      # cannot be allocated when there's nowhere to put them) and that
+      # is not a defect we should alert on.
+      test: ["CMD-SHELL", "curl -sf -u elastic:${ES_PASSWORD} 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=3s' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
