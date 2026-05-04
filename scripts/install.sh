@@ -31,6 +31,16 @@ APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"   # repo root
 APP_PORT="${APP_PORT:-8080}"
 SERVER_NAME="${SERVER_NAME:-_}"   # nginx default_server catch-all; set to your domain
 LOG_DIR="${LOG_DIR:-/var/log/zhitu-agent}"
+# Set SKIP_NGINX=true to deploy backend-only (Spring Boot exposed
+# directly on $APP_PORT). Useful for early demos before TLS is set up,
+# or when the box has its own reverse proxy upstream. Re-running with
+# SKIP_NGINX=false later will install the nginx site cleanly without
+# touching systemd.
+SKIP_NGINX="${SKIP_NGINX:-false}"
+# Set SKIP_FRONTEND_CHECK=true if you also pass SKIP_FRONTEND=true to
+# deploy.sh — install.sh otherwise insists node/npm exist so a future
+# `scripts/deploy.sh` won't surprise-fail mid-build.
+SKIP_FRONTEND_CHECK="${SKIP_FRONTEND_CHECK:-$SKIP_NGINX}"
 
 # ---- helpers ----------------------------------------------------------
 log()  { printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
@@ -53,10 +63,18 @@ require_root
 log "checking prerequisites"
 require_cmd java
 require_cmd mvn
-require_cmd node
-require_cmd npm
-require_cmd nginx
 require_cmd systemctl
+if [[ "$SKIP_FRONTEND_CHECK" != "true" ]]; then
+    require_cmd node
+    require_cmd npm
+else
+    log "skipping node/npm check (SKIP_FRONTEND_CHECK=true)"
+fi
+if [[ "$SKIP_NGINX" != "true" ]]; then
+    require_cmd nginx
+else
+    log "skipping nginx check (SKIP_NGINX=true) — backend will serve on :$APP_PORT directly"
+fi
 
 java_version=$(java -version 2>&1 | head -1 | awk -F\" '{print $2}' | cut -d. -f1)
 [[ "$java_version" -ge 21 ]] || die "java >= 21 required, found $java_version"
@@ -110,37 +128,51 @@ systemctl enable zhitu-agent.service
 log "systemd unit enabled (not started — run scripts/deploy.sh first)"
 
 # ---- nginx site -------------------------------------------------------
-NGINX_TEMPLATE="$APP_DIR/infra/nginx/zhitu-agent.conf"
-NGINX_RENDERED="$APP_DIR/infra/nginx/zhitu-agent.rendered.conf"
-NGINX_AVAILABLE="/etc/nginx/sites-available/zhitu-agent.conf"
-NGINX_ENABLED="/etc/nginx/sites-enabled/zhitu-agent.conf"
-
-[[ -f "$NGINX_TEMPLATE" ]] || die "nginx template missing: $NGINX_TEMPLATE"
-
-log "rendering nginx site (server_name=$SERVER_NAME, app_port=$APP_PORT)"
-sed \
-    -e "s|__APP_DIR__|$APP_DIR|g" \
-    -e "s|__APP_PORT__|$APP_PORT|g" \
-    -e "s|__SERVER_NAME__|$SERVER_NAME|g" \
-    "$NGINX_TEMPLATE" > "$NGINX_RENDERED"
-
-# Some distros use conf.d, others sites-available — handle both.
-if [[ -d /etc/nginx/sites-available && -d /etc/nginx/sites-enabled ]]; then
-    ln -sf "$NGINX_RENDERED" "$NGINX_AVAILABLE"
-    ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
-    log "installed at $NGINX_ENABLED"
+if [[ "$SKIP_NGINX" == "true" ]]; then
+    log "skipping nginx site install (SKIP_NGINX=true)"
+    log "Spring Boot will be reachable directly at http://<host>:$APP_PORT"
+    log "to add nginx later: apt install nginx, then re-run this script"
 else
-    ln -sf "$NGINX_RENDERED" /etc/nginx/conf.d/zhitu-agent.conf
-    log "installed at /etc/nginx/conf.d/zhitu-agent.conf"
+    NGINX_TEMPLATE="$APP_DIR/infra/nginx/zhitu-agent.conf"
+    NGINX_RENDERED="$APP_DIR/infra/nginx/zhitu-agent.rendered.conf"
+    NGINX_AVAILABLE="/etc/nginx/sites-available/zhitu-agent.conf"
+    NGINX_ENABLED="/etc/nginx/sites-enabled/zhitu-agent.conf"
+
+    [[ -f "$NGINX_TEMPLATE" ]] || die "nginx template missing: $NGINX_TEMPLATE"
+
+    log "rendering nginx site (server_name=$SERVER_NAME, app_port=$APP_PORT)"
+    sed \
+        -e "s|__APP_DIR__|$APP_DIR|g" \
+        -e "s|__APP_PORT__|$APP_PORT|g" \
+        -e "s|__SERVER_NAME__|$SERVER_NAME|g" \
+        "$NGINX_TEMPLATE" > "$NGINX_RENDERED"
+
+    # Some distros use conf.d, others sites-available — handle both.
+    if [[ -d /etc/nginx/sites-available && -d /etc/nginx/sites-enabled ]]; then
+        ln -sf "$NGINX_RENDERED" "$NGINX_AVAILABLE"
+        ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
+        log "installed at $NGINX_ENABLED"
+    else
+        ln -sf "$NGINX_RENDERED" /etc/nginx/conf.d/zhitu-agent.conf
+        log "installed at /etc/nginx/conf.d/zhitu-agent.conf"
+    fi
+
+    log "validating nginx config"
+    nginx -t
+
+    log "reloading nginx"
+    systemctl reload nginx
 fi
 
-log "validating nginx config"
-nginx -t
-
-log "reloading nginx"
-systemctl reload nginx
-
 # ---- summary ----------------------------------------------------------
+if [[ "$SKIP_NGINX" == "true" ]]; then
+    ACCESS_URL="http://<host>:$APP_PORT (Spring Boot direct, no reverse proxy)"
+    NGINX_LINE="nginx:  (skipped — backend on :$APP_PORT directly)"
+else
+    ACCESS_URL="http://$SERVER_NAME or via certbot for HTTPS"
+    NGINX_LINE="nginx:  /etc/nginx/sites-enabled/zhitu-agent.conf"
+fi
+
 cat <<EOF
 
 \033[1;32m[install] done.\033[0m
@@ -148,14 +180,16 @@ cat <<EOF
 next steps:
   1. ensure $APP_DIR/.env is populated (LLM keys, ES password, etc.)
   2. run scripts/deploy.sh to build + start the service
-  3. (optional) certbot --nginx -d $SERVER_NAME    # for HTTPS
+     (pass SKIP_FRONTEND=true if you skipped nginx — no point building
+      a frontend that has nowhere to be served)
+  3. access: $ACCESS_URL
   4. tail logs:
        journalctl -u zhitu-agent -f
        tail -f $LOG_DIR/app.log
 
 paths:
   unit:   $UNIT_TARGET -> $UNIT_RENDERED
-  nginx:  /etc/nginx/sites-enabled/zhitu-agent.conf
+  $NGINX_LINE
   logs:   $LOG_DIR
   user:   $APP_USER
 EOF
