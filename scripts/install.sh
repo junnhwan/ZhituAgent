@@ -33,14 +33,19 @@ SERVER_NAME="${SERVER_NAME:-_}"   # nginx default_server catch-all; set to your 
 LOG_DIR="${LOG_DIR:-/var/log/zhitu-agent}"
 # Set SKIP_NGINX=true to deploy backend-only (Spring Boot exposed
 # directly on $APP_PORT). Useful for early demos before TLS is set up,
-# or when the box has its own reverse proxy upstream. Re-running with
-# SKIP_NGINX=false later will install the nginx site cleanly without
-# touching systemd.
+# or when the box has its own reverse proxy upstream. The frontend is
+# still served — Vite builds straight into src/main/resources/static
+# (see frontend/vite.config.ts) and the bundle ships inside the fat jar,
+# so Spring Boot serves index.html on / and the API on /api on the same
+# port. Re-running with SKIP_NGINX=false later will install the nginx
+# site cleanly without touching systemd.
 SKIP_NGINX="${SKIP_NGINX:-false}"
-# Set SKIP_FRONTEND_CHECK=true if you also pass SKIP_FRONTEND=true to
-# deploy.sh — install.sh otherwise insists node/npm exist so a future
-# `scripts/deploy.sh` won't surprise-fail mid-build.
-SKIP_FRONTEND_CHECK="${SKIP_FRONTEND_CHECK:-$SKIP_NGINX}"
+# Set SKIP_FRONTEND_CHECK=true to skip the node/npm prerequisite check
+# — only do this if you also pass SKIP_FRONTEND=true to deploy.sh
+# (e.g. CI builds the frontend bundle separately and ships it in the
+# repo / artifact). Default: always check, because the standard deploy
+# path needs them regardless of SKIP_NGINX.
+SKIP_FRONTEND_CHECK="${SKIP_FRONTEND_CHECK:-false}"
 
 # ---- helpers ----------------------------------------------------------
 log()  { printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
