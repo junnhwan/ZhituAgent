@@ -30,6 +30,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
   const [view, setView] = useState<View>("chat");
+  const [autoStartAlertId, setAutoStartAlertId] = useState<string | null>(null);
 
   const { handleNewSession, handleSelectSession, restoreLastSession, getActiveSession } =
     useSessionManager(state, dispatch);
@@ -48,6 +49,11 @@ export default function App() {
     },
     [getActiveSession, send],
   );
+
+  const handleSwitchToSre = useCallback((fixtureId: string) => {
+    setAutoStartAlertId(fixtureId);
+    setView("sre");
+  }, []);
 
   const handleApprove = useCallback(
     async (pendingId: string) => {
@@ -110,10 +116,14 @@ export default function App() {
                 messages={activeSession?.messages ?? []}
                 onSuggestionClick={handleSend}
                 onRetry={retry}
+                onSwitchToSre={handleSwitchToSre}
               />
             </Workspace>
           ) : (
-            <SreDemoPanel />
+            <SreDemoPanel
+              autoStartAlertId={autoStartAlertId}
+              onAutoStartConsumed={() => setAutoStartAlertId(null)}
+            />
           )
         }
         aside={view === "chat" ? <TracePanel trace={trace} /> : <TracePanel trace={emptyTraceDisplay()} />}

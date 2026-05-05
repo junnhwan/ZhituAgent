@@ -1,30 +1,40 @@
-import { Sparkles, Database, Wrench, Brain } from "lucide-react";
+import { Workflow, Database, Wrench, Repeat } from "lucide-react";
 import { motion } from "framer-motion";
 import ChatMessage from "./ChatMessage";
 import type { MessageState } from "../../hooks/types";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import "./ChatPanel.css";
 
-const SUGGESTIONS: { icon: React.ReactNode; title: string; prompt: string }[] = [
+type Suggestion = {
+  icon: React.ReactNode;
+  title: string;
+  prompt: string;            // 用作卡片副标题文案
+  action?: "sre";            // undefined → 走 /api/chat;"sre" → 切到 SRE Demo
+  fixtureId?: string;        // action="sre" 时携带的告警 fixture id
+};
+
+const SUGGESTIONS: Suggestion[] = [
   {
-    icon: <Sparkles size={16} />,
-    title: "能力介绍",
-    prompt: "介绍一下你的核心能力，以及背后用到了哪些组件",
+    icon: <Workflow size={16} />,
+    title: "Agent 编排",
+    prompt: "支付网关 502 告警，帮我分析根因并出处置报告",
+    action: "sre",
+    fixtureId: "alert-002",
   },
   {
     icon: <Database size={16} />,
-    title: "知识库检索",
-    prompt: "从知识库中检索关于 RAG 检索增强的内容，并总结要点",
+    title: "RAG 知识库",
+    prompt: "从知识库找 ES hybrid 检索的实现要点",
   },
   {
     icon: <Wrench size={16} />,
-    title: "工具调用",
-    prompt: "帮我查一下当前时间，并说明你是怎么拿到的",
+    title: "MCP & 工具",
+    prompt: "查一下当前时间和最近 5 分钟的 prod 错误日志",
   },
   {
-    icon: <Brain size={16} />,
-    title: "长期记忆",
-    prompt: "请记住：我是 Java 后端工程师，正在学习 AI Agent",
+    icon: <Repeat size={16} />,
+    title: "ReAct 循环",
+    prompt: "排查为什么 P99 延迟突然飙到 2s",
   },
 ];
 
@@ -32,10 +42,12 @@ export default function ChatPanel({
   messages,
   onSuggestionClick,
   onRetry,
+  onSwitchToSre,
 }: {
   messages: MessageState[];
   onSuggestionClick?: (prompt: string) => void;
   onRetry?: () => void;
+  onSwitchToSre?: (fixtureId: string) => void;
 }) {
   const scrollRef = useAutoScroll(messages);
 
@@ -56,7 +68,13 @@ export default function ChatPanel({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: i * 0.06 }}
                   whileHover={{ y: -2 }}
-                  onClick={() => onSuggestionClick?.(s.prompt)}
+                  onClick={() => {
+                    if (s.action === "sre" && s.fixtureId && onSwitchToSre) {
+                      onSwitchToSre(s.fixtureId);
+                    } else {
+                      onSuggestionClick?.(s.prompt);
+                    }
+                  }}
                 >
                   <span className="cp-suggestion-icon">{s.icon}</span>
                   <span className="cp-suggestion-body">

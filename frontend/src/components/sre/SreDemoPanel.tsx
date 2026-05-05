@@ -13,6 +13,11 @@ import AgentReport from "./AgentReport";
 
 const SPECIALIST_ORDER = ["AlertTriageAgent", "LogQueryAgent", "ReportAgent"];
 
+type Props = {
+  autoStartAlertId?: string | null;
+  onAutoStartConsumed?: () => void;
+};
+
 function initialSpecialists(): SpecialistRunState[] {
   return SPECIALIST_ORDER.map((agentName) => ({
     agentName,
@@ -21,7 +26,7 @@ function initialSpecialists(): SpecialistRunState[] {
   }));
 }
 
-export default function SreDemoPanel() {
+export default function SreDemoPanel({ autoStartAlertId, onAutoStartConsumed }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [specialists, setSpecialists] = useState<SpecialistRunState[]>(initialSpecialists);
@@ -117,6 +122,14 @@ export default function SreDemoPanel() {
     setReport(null);
     setError(null);
   }, []);
+
+  useEffect(() => {
+    if (!autoStartAlertId || streaming) return;
+    const fixture = ALERT_FIXTURES.find((a) => a.alertId === autoStartAlertId);
+    if (!fixture) return;
+    handleStart(fixture);
+    onAutoStartConsumed?.();
+  }, [autoStartAlertId, streaming, handleStart, onAutoStartConsumed]);
 
   return (
     <div className="sre-panel">
