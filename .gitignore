@@ -30,3 +30,10 @@ infra/nginx/*.rendered.conf
 # the actual web.yml is generated server-side via htpasswd and stays
 # on disk only.
 infra/cloud/prometheus-web.yml
+
+# Vite build output baked into the fat jar by mvn package. File names
+# are hash-suffixed (index-<hash>.js / index-<hash>.css) so committing
+# them causes diverging-history conflicts whenever local and remote
+# happen to build separately. deploy.sh always re-runs `npm run build`
+# before `mvn package`, so the bundle is reproduced on every deploy.
+src/main/resources/static/
