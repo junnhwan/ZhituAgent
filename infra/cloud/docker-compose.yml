@@ -123,11 +123,24 @@ services:
   # (same belt-and-braces as ES after the 2026-05-03 ransomware incident).
   # Don't drop either — basic auth alone is brute-forceable, IP whitelist alone
   # collapses if the rule is mis-typed.
+  #
+  # Image: v3.3.1 (not v2.55.0). v3 is fully wire-compatible with our scrape
+  # config and basic_auth_users format; the only breaking change at v3 is
+  # default UTF-8 metric names + removal of long-deprecated 2018-era APIs,
+  # neither of which we use. v2.55.0 chosen on cn-hosted demo boxes is a
+  # frequent docker-hub pull failure (registry.docker.io regional throttle),
+  # while v3.3.1 is in the standard image set most operators already have
+  # locally.
+  #
+  # Host port 9091 (not 9090). 9090 collides with several common processes:
+  # apt-installed prometheus, mihomo/clash REST API dashboard, some portainer
+  # builds. 9091 is uncontested. The container still listens on 9090
+  # internally so prometheus.yml self-scrape (if added) needs no change.
   prometheus:
-    image: prom/prometheus:v2.55.0
+    image: prom/prometheus:v3.3.1
     container_name: zhitu-cloud-prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-web.yml:/etc/prometheus/web.yml:ro
