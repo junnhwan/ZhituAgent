@@ -24,3 +24,9 @@ tools/eval/.venv/
 # absolute server paths + chosen domain and must not be committed.
 infra/systemd/*.rendered.service
 infra/nginx/*.rendered.conf
+
+# Prometheus basic-auth web config — contains a real bcrypt hash of
+# the operator's password. Only the .example template is committed;
+# the actual web.yml is generated server-side via htpasswd and stays
+# on disk only.
+infra/cloud/prometheus-web.yml
