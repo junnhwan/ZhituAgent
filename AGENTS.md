@@ -1,6 +1,6 @@
 # 协作约束
 
-这个文件用于记录当前仓库的开发约束、协作规则和已经确认的边界。**当前进度状态见 `optimize-progress.md`,session 入口见 `CLAUDE.md`,本文件只放长期不变的约束**。
+这个文件用于记录当前仓库的开发约束、协作规则和已经确认的边界。**当前进度状态见 `docs/optimize-progress.md`,session 入口见 `CLAUDE.md`,本文件只放长期不变的约束**。
 
 ## 项目方向
 
@@ -22,7 +22,7 @@
 - 优先采用"少量阶段、少量 commit"的推进方式,不要拆成过多碎小提交
 - 后续阶段统一使用 `Task 1` / `Task 2` / `Task 3` / `Task 4` 描述阶段
 - 规划、设计、计划文档统一放在 `docs/`,已实施的 plan 沉到 `docs/archive/`
-- 必须维护 `optimize-progress.md`,作为当前开发进度的实时记录(原 `progress.md` 已删除,被这个文件替代)
+- 必须维护 `docs/optimize-progress.md`,作为当前开发进度的实时记录(原 `progress.md` 已删除,被这个文件替代)
 
 ## 基础设施约束
 
@@ -54,7 +54,7 @@
 
 - **必读入口**:
   - `CLAUDE.md` — session 速查卡
-  - `optimize-progress.md` — 完整工程史(C-1..C-3 / A-1..A-7 / SG / CR-1 / SR / T1+T2 / HL.a+HL.b / MCP / UI)
+  - `docs/optimize-progress.md` — 完整工程史(C-1..C-3 / A-1..A-7 / SG / CR-1 / SR / T1+T2 / HL.a+HL.b / MCP / UI)
 - **设计文档**(`docs/`):
   - `2026-04-27-zhitu-agent-java-design.md`
   - `2026-04-27-zhitu-agent-java-api.md`
@@ -65,7 +65,7 @@
   - `2026-04-27-zhitu-agent-java-implementation-plan.md`
   - `2026-04-28-zhitu-agent-java-phase-two-plan.md`
   - `2026-04-28-zhitu-agent-java-optimization-plan.md`
-- **当前状态**(详见 `optimize-progress.md`):
+- **当前状态**(详见 `docs/optimize-progress.md`):
   - 阶段 1 / 阶段 2 全部完成,真实 LLM 链路 + Redis + ES 全部联调通过
   - 阶段 3 v3 ES 栈现代化 M1+M2+M3 完成:pgvector→ES+IK、MinIO+Tika 同步入库、Kafka KRaft 异步 pipeline
   - 单元测试 217/217 全绿(`mvn test`),IT 通过 `mvn verify` + Docker 跑(目前本地无 docker 自动跳过 4 个 Kafka IT)

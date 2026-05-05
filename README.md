@@ -116,7 +116,7 @@ curl http://localhost:8080/api/files/status/{uploadId}
 ## 关键文档(深度细节)
 
 - **`CLAUDE.md`** — 给 AI 协作者看的工作笔记,包含 TL;DR / 协作模式 / 当前状态速查 / 简历叙事框架。**新会话先 read 这个,30 秒进入工作状态**
-- **`optimize-progress.md`** — 项目主进度,完整 A-1..A-7 + 阶段 3 M1-M5 + v3-eval 章节
+- **`docs/optimize-progress.md`** — 项目主进度,完整 A-1..A-7 + 阶段 3 M1-M5 + v3-eval 章节
 - **`docs/2026-05-04-cmteb-eval-baseline-vs-norerank.md`** — C-MTEB rerank ablation 报告(含 sampling 边界声明)
 - **`docs/2026-04-27-zhitu-agent-java-design.md`** — v1 设计文档(历史锚点)
 - **`docs/2026-05-01-multi-agent-execution-handbook.md`** — Multi-agent SRE 编排
