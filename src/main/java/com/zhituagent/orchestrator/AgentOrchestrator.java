@@ -1,6 +1,10 @@
 package com.zhituagent.orchestrator;
 
 import com.zhituagent.config.AppProperties;
+import com.zhituagent.config.LlmProperties;
+import com.zhituagent.intent.DualLayerIntentRouter;
+import com.zhituagent.intent.IntentLabel;
+import com.zhituagent.intent.IntentResult;
 import com.zhituagent.llm.ChatTurnResult;
 import com.zhituagent.llm.LlmRuntime;
 import com.zhituagent.rag.RagRetrievalResult;
@@ -13,6 +17,7 @@ import com.zhituagent.tool.ToolResult;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -35,6 +40,9 @@ public class AgentOrchestrator {
     private final LlmRuntime llmRuntime;
     private final ToolCallExecutor toolCallExecutor;
     private final String systemPrompt;
+    /** Optional — null when {@code zhitu.llm.intent.dual-layer.enabled=false} (default). */
+    private final DualLayerIntentRouter dualLayerIntentRouter;
+    private final double greetingDirectAnswerThreshold;
 
     @Autowired
     public AgentOrchestrator(RagRetriever ragRetriever,
@@ -43,7 +51,9 @@ public class AgentOrchestrator {
                              LlmRuntime llmRuntime,
                              ToolCallExecutor toolCallExecutor,
                              AppProperties appProperties,
-                             ResourceLoader resourceLoader) throws IOException {
+                             ResourceLoader resourceLoader,
+                             ObjectProvider<DualLayerIntentRouter> dualLayerIntentRouterProvider,
+                             LlmProperties llmProperties) throws IOException {
         this.ragRetriever = ragRetriever;
         this.selfRagOrchestrator = selfRagOrchestrator;
         this.toolRegistry = toolRegistry;
@@ -51,6 +61,8 @@ public class AgentOrchestrator {
         this.toolCallExecutor = toolCallExecutor;
         Resource resource = resourceLoader.getResource(appProperties.getSystemPromptLocation());
         this.systemPrompt = resource.getContentAsString(StandardCharsets.UTF_8);
+        this.dualLayerIntentRouter = dualLayerIntentRouterProvider.getIfAvailable();
+        this.greetingDirectAnswerThreshold = llmProperties.getIntent().getGreetingDirectAnswerThreshold();
     }
 
     AgentOrchestrator(RagRetriever ragRetriever,
@@ -67,12 +79,27 @@ public class AgentOrchestrator {
                       LlmRuntime llmRuntime,
                       ToolCallExecutor toolCallExecutor,
                       String systemPrompt) {
+        this(ragRetriever, selfRagOrchestrator, toolRegistry, llmRuntime, toolCallExecutor,
+                systemPrompt, null, 0.95);
+    }
+
+    /** Test-only constructor allowing a fixture {@link DualLayerIntentRouter} to be injected. */
+    AgentOrchestrator(RagRetriever ragRetriever,
+                      SelfRagOrchestrator selfRagOrchestrator,
+                      ToolRegistry toolRegistry,
+                      LlmRuntime llmRuntime,
+                      ToolCallExecutor toolCallExecutor,
+                      String systemPrompt,
+                      DualLayerIntentRouter dualLayerIntentRouter,
+                      double greetingDirectAnswerThreshold) {
         this.ragRetriever = ragRetriever;
         this.selfRagOrchestrator = selfRagOrchestrator;
         this.toolRegistry = toolRegistry;
         this.llmRuntime = llmRuntime;
         this.toolCallExecutor = toolCallExecutor;
         this.systemPrompt = systemPrompt;
+        this.dualLayerIntentRouter = dualLayerIntentRouter;
+        this.greetingDirectAnswerThreshold = greetingDirectAnswerThreshold;
     }
 
     public RouteDecision decide(String userMessage) {
@@ -92,7 +119,27 @@ public class AgentOrchestrator {
                                 Map<String, Object> sessionMetadata) {
         Map<String, Object> safeMetadata = sessionMetadata == null ? Map.of() : sessionMetadata;
 
-        RagRetrievalResult retrievalResult = retrieveWithOptionalSelfRag(userMessage, retrievalOptions);
+        // M1: Dual-layer intent — runs before RAG to short-circuit obvious cases.
+        // Falls through to existing logic when disabled, uncertain, or labelled
+        // RAG_RETRIEVAL/MULTI_AGENT/UNKNOWN/FALLTHROUGH.
+        IntentResult intent = dualLayerIntentRouter == null
+                ? IntentResult.fallthrough(0)
+                : dualLayerIntentRouter.classify(userMessage, safeMetadata);
+
+        if (intent.label() == IntentLabel.GREETING
+                && intent.confidence() >= greetingDirectAnswerThreshold) {
+            log.info(
+                    "intent.shortcircuit greeting → direct-answer tier={} conf={} latencyMs={}",
+                    intent.tier(), intent.confidence(), intent.latencyMs()
+            );
+            return RouteDecision.direct();
+        }
+        boolean skipRag = intent.label() == IntentLabel.TIME_QUERY
+                || intent.label() == IntentLabel.TOOL_CALL;
+
+        RagRetrievalResult retrievalResult = skipRag
+                ? new RagRetrievalResult(List.of(), "skipped-by-intent", 0, "", 0.0)
+                : retrieveWithOptionalSelfRag(userMessage, retrievalOptions);
         if (!retrievalResult.snippets().isEmpty()) {
             return RouteDecision.retrieval(retrievalResult);
         }
