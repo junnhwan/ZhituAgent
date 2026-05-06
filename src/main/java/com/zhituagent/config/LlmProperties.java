@@ -12,6 +12,7 @@ public class LlmProperties {
     private final RateLimit rateLimit = new RateLimit();
     private final Router router = new Router();
     private final Intent intent = new Intent();
+    private final Agent agent = new Agent();
 
     public boolean isMockMode() {
         return mockMode;
@@ -55,6 +56,10 @@ public class LlmProperties {
 
     public Intent getIntent() {
         return intent;
+    }
+
+    public Agent getAgent() {
+        return agent;
     }
 
     public static class RateLimit {
@@ -318,6 +323,55 @@ public class LlmProperties {
             public void setLabel(String label) { this.label = label; }
             public double getConfidence() { return confidence; }
             public void setConfidence(double confidence) { this.confidence = confidence; }
+        }
+    }
+
+    /**
+     * Agent-paradigm extensions (M3 borrow from project-java).
+     *
+     * <p>For now contains only reflection — but the namespace is reserved so
+     * future paradigms (plan-and-execute, debate, hierarchical planner) can
+     * be added without further nesting churn.
+     */
+    public static class Agent {
+
+        private final Reflection reflection = new Reflection();
+
+        public Reflection getReflection() { return reflection; }
+
+        /**
+         * Self-RAG / Reflexion-style retry: after AgentLoop produces an
+         * answer, score it 1-10; if below threshold, run AgentLoop once more
+         * with the reviewer's reasons in the system prompt.
+         *
+         * <p>Worst-case cost = 2× primary AgentLoop cost + 2 mini scoring
+         * calls. In practice ~30-60% token cost overhead on average for
+         * a small correctness gain (target: +1-3 pp on the SRE eval set).
+         *
+         * <p>Streaming responses bypass reflection automatically — the SSE
+         * path in {@code ChatController} doesn't go through AgentLoop /
+         * ReflectionLoop.
+         */
+        public static class Reflection {
+
+            private boolean enabled = false;
+            private int scoreThreshold = 8;
+            private int maxRetries = 1;
+            /** When true, score with the cheap fallbackLlm bean (e.g. gpt-5.4-mini)
+             *  to keep the reflection cost overhead predictable. */
+            private boolean useFallbackModel = true;
+
+            public boolean isEnabled() { return enabled; }
+            public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+            public int getScoreThreshold() { return scoreThreshold; }
+            public void setScoreThreshold(int scoreThreshold) { this.scoreThreshold = scoreThreshold; }
+
+            public int getMaxRetries() { return maxRetries; }
+            public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
+
+            public boolean isUseFallbackModel() { return useFallbackModel; }
+            public void setUseFallbackModel(boolean useFallbackModel) { this.useFallbackModel = useFallbackModel; }
         }
     }
 }

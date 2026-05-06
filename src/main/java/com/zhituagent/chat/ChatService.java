@@ -40,7 +40,12 @@ public class ChatService {
     private final MemoryService memoryService;
     private final ContextManager contextManager;
     private final AgentOrchestrator agentOrchestrator;
-    private final AgentLoop agentLoop;
+    /**
+     * Wraps {@link AgentLoop} with the optional M3 self-reflection retry. When
+     * {@code zhitu.llm.agent.reflection.enabled=false} (default) ReflectionLoop
+     * is a transparent pass-through, preserving byte-stable pre-M3 chat output.
+     */
+    private final com.zhituagent.agent.ReflectionLoop reflectionLoop;
     private final ChatTraceFactory chatTraceFactory;
     private final ChatMetricsRecorder chatMetricsRecorder;
     private final ToolMetricsRecorder toolMetricsRecorder;
@@ -55,7 +60,7 @@ public class ChatService {
                        MemoryService memoryService,
                        ContextManager contextManager,
                        AgentOrchestrator agentOrchestrator,
-                       AgentLoop agentLoop,
+                       com.zhituagent.agent.ReflectionLoop reflectionLoop,
                        ChatTraceFactory chatTraceFactory,
                        ChatMetricsRecorder chatMetricsRecorder,
                        ToolMetricsRecorder toolMetricsRecorder,
@@ -68,7 +73,7 @@ public class ChatService {
         this.memoryService = memoryService;
         this.contextManager = contextManager;
         this.agentOrchestrator = agentOrchestrator;
-        this.agentLoop = agentLoop;
+        this.reflectionLoop = reflectionLoop;
         this.chatTraceFactory = chatTraceFactory;
         this.chatMetricsRecorder = chatMetricsRecorder;
         this.toolMetricsRecorder = toolMetricsRecorder;
@@ -150,7 +155,7 @@ public class ChatService {
             String answer = "";
             try {
                 if (reactEnabled && !routeDecision.retrievalHit()) {
-                    AgentLoop.LoopResult loopResult = agentLoop.run(
+                    AgentLoop.LoopResult loopResult = reflectionLoop.run(
                             systemPrompt,
                             message,
                             contextBundle,
