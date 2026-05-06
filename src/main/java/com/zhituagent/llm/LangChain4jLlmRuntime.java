@@ -18,6 +18,7 @@ import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -31,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 @Service
+@ConditionalOnProperty(prefix = "zhitu.llm.router", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class LangChain4jLlmRuntime implements LlmRuntime {
 
     private static final Logger log = LoggerFactory.getLogger(LangChain4jLlmRuntime.class);
@@ -40,24 +42,54 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
     private final LlmProperties properties;
     private final AiMetricsRecorder aiMetricsRecorder;
     private final LlmRateLimiter rateLimiter;
+    /**
+     * Optional per-instance model name override. When non-blank, takes precedence over
+     * {@link LlmProperties#getModelName()} for both the underlying OpenAI builder and
+     * for log/metric tags. Used by {@code ModelRouterConfig} to spawn a primary
+     * (e.g. gpt-5.4) and a fallback (e.g. gpt-5.4-mini) instance from the same
+     * baseUrl/apiKey while keeping a single {@link LlmProperties} bean.
+     */
+    private final String modelNameOverride;
     private volatile ChatModel chatModel;
     private volatile StreamingChatModel streamingChatModel;
 
     public LangChain4jLlmRuntime(LlmProperties properties) {
-        this(properties, AiMetricsRecorder.noop(), LlmRateLimiter.disabled());
+        this(properties, AiMetricsRecorder.noop(), LlmRateLimiter.disabled(), null);
     }
 
     public LangChain4jLlmRuntime(LlmProperties properties, AiMetricsRecorder aiMetricsRecorder) {
-        this(properties, aiMetricsRecorder, LlmRateLimiter.disabled());
+        this(properties, aiMetricsRecorder, LlmRateLimiter.disabled(), null);
     }
 
     @Autowired
     public LangChain4jLlmRuntime(LlmProperties properties,
                                  AiMetricsRecorder aiMetricsRecorder,
                                  LlmRateLimiter rateLimiter) {
+        this(properties, aiMetricsRecorder, rateLimiter, null);
+    }
+
+    /**
+     * Full constructor with optional model name override. When {@code modelNameOverride}
+     * is null or blank, falls back to {@code effectiveModelName()}.
+     */
+    public LangChain4jLlmRuntime(LlmProperties properties,
+                                 AiMetricsRecorder aiMetricsRecorder,
+                                 LlmRateLimiter rateLimiter,
+                                 String modelNameOverride) {
         this.properties = properties;
         this.aiMetricsRecorder = aiMetricsRecorder;
         this.rateLimiter = rateLimiter;
+        this.modelNameOverride = modelNameOverride;
+    }
+
+    /**
+     * Returns the model name actually used by this instance — override if set, else
+     * the top-level configured model. Used everywhere the prior code wrote
+     * {@code effectiveModelName()} so logs/metrics correctly distinguish
+     * primary vs fallback tiers.
+     */
+    public String effectiveModelName() {
+        return isNotBlank(modelNameOverride) ? modelNameOverride : properties.getModelName();
     }
 
     @Override
@@ -71,11 +103,11 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                         ? ""
                         : response.aiMessage().text();
                 long latencyMs = elapsedMillis(startNanos);
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate", true, latencyMs);
                 log.info(
                         "模型调用完成 llm.generate.completed provider=openai-compatible messageCount={} model={} latencyMs={}",
                         messages.size(),
-                        properties.getModelName(),
+                        effectiveModelName(),
                         latencyMs
                 );
                 return answer;
@@ -83,35 +115,35 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                 if (isNullContentResponse(exception)) {
                     String answer = generateByStreamingFallback(systemPrompt, messages);
                     long latencyMs = elapsedMillis(startNanos);
-                    aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
+                    aiMetricsRecorder.recordRequest(effectiveModelName(), "generate", true, latencyMs);
                     log.warn(
                             "模型同步返回空内容，已回退到流式聚合 llm.generate.stream_fallback model={} messageCount={} message={}",
-                            properties.getModelName(),
+                            effectiveModelName(),
                             messages.size(),
                             exception.getMessage()
                     );
                     log.info(
                             "模型调用完成 llm.generate.completed provider=openai-compatible-stream-fallback messageCount={} model={} latencyMs={}",
                             messages.size(),
-                            properties.getModelName(),
+                            effectiveModelName(),
                             latencyMs
                     );
                     return answer;
                 }
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", false, elapsedMillis(startNanos));
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate", false, elapsedMillis(startNanos));
                 throw exception;
             } catch (RuntimeException exception) {
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", false, elapsedMillis(startNanos));
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate", false, elapsedMillis(startNanos));
                 throw exception;
             }
         }
         String answer = fallbackAnswer(messages);
         long latencyMs = elapsedMillis(startNanos);
-        aiMetricsRecorder.recordRequest(properties.getModelName(), "generate", true, latencyMs);
+        aiMetricsRecorder.recordRequest(effectiveModelName(), "generate", true, latencyMs);
         log.info(
                 "模型调用完成 llm.generate.completed provider=mock messageCount={} model={} latencyMs={}",
                 messages.size(),
-                properties.getModelName(),
+                effectiveModelName(),
                 latencyMs
         );
         return answer;
@@ -138,28 +170,28 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                         ? aiMessage.toolExecutionRequests()
                         : List.of();
                 long latencyMs = elapsedMillis(startNanos);
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", true, latencyMs);
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate-tools", true, latencyMs);
                 log.info(
                         "模型工具调用完成 llm.generate_with_tools.completed provider=openai-compatible toolCount={} toolCalls={} model={} latencyMs={}",
                         tools == null ? 0 : tools.size(),
                         toolCalls.size(),
-                        properties.getModelName(),
+                        effectiveModelName(),
                         latencyMs
                 );
                 return new ChatTurnResult(text, toolCalls);
             } catch (RuntimeException exception) {
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", false, elapsedMillis(startNanos));
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate-tools", false, elapsedMillis(startNanos));
                 throw exception;
             }
         }
         ChatTurnResult mocked = mockToolSelection(messages, tools);
         long latencyMs = elapsedMillis(startNanos);
-        aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-tools", true, latencyMs);
+        aiMetricsRecorder.recordRequest(effectiveModelName(), "generate-tools", true, latencyMs);
         log.info(
                 "模型工具调用完成 llm.generate_with_tools.completed provider=mock toolCount={} toolCalls={} model={} latencyMs={}",
                 tools == null ? 0 : tools.size(),
                 mocked.toolCalls().size(),
-                properties.getModelName(),
+                effectiveModelName(),
                 latencyMs
         );
         return mocked;
@@ -192,17 +224,17 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                         ? aiMessage.toolExecutionRequests()
                         : List.of();
                 long latencyMs = elapsedMillis(startNanos);
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-chat-turn", true, latencyMs);
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate-chat-turn", true, latencyMs);
                 log.info(
                         "模型多轮调用完成 llm.generate_chat_turn.completed provider=openai-compatible messageCount={} toolCalls={} model={} latencyMs={}",
                         typedMessages.size(),
                         toolCalls.size(),
-                        properties.getModelName(),
+                        effectiveModelName(),
                         latencyMs
                 );
                 return new ChatTurnResult(text, toolCalls);
             } catch (RuntimeException exception) {
-                aiMetricsRecorder.recordRequest(properties.getModelName(), "generate-chat-turn", false, elapsedMillis(startNanos));
+                aiMetricsRecorder.recordRequest(effectiveModelName(), "generate-chat-turn", false, elapsedMillis(startNanos));
                 throw exception;
             }
         }
@@ -278,11 +310,11 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
 
             awaitStreamingCompletion(completionLatch, errorRef);
             long latencyMs = elapsedMillis(startNanos);
-            aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", true, latencyMs);
+            aiMetricsRecorder.recordRequest(effectiveModelName(), "stream", true, latencyMs);
             log.info(
                     "模型流式调用完成 llm.stream.completed provider=openai-compatible messageCount={} model={} latencyMs={}",
                     messages.size(),
-                    properties.getModelName(),
+                    effectiveModelName(),
                     latencyMs
             );
             return;
@@ -296,11 +328,11 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
         }
         onComplete.run();
         long latencyMs = elapsedMillis(startNanos);
-        aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", true, latencyMs);
+        aiMetricsRecorder.recordRequest(effectiveModelName(), "stream", true, latencyMs);
         log.info(
                 "模型流式调用完成 llm.stream.completed provider=mock messageCount={} model={} latencyMs={}",
                 messages.size(),
-                properties.getModelName(),
+                effectiveModelName(),
                 latencyMs
         );
     }
@@ -314,7 +346,7 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
         return !properties.isMockMode()
                 && isNotBlank(properties.getBaseUrl())
                 && isNotBlank(properties.getApiKey())
-                && isNotBlank(properties.getModelName());
+                && isNotBlank(effectiveModelName());
     }
 
     private ChatModel getChatModel() {
@@ -326,7 +358,7 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                     local = OpenAiChatModel.builder()
                             .baseUrl(OpenAiCompatibleBaseUrlNormalizer.normalize(properties.getBaseUrl()))
                             .apiKey(properties.getApiKey())
-                            .modelName(properties.getModelName())
+                            .modelName(effectiveModelName())
                             .timeout(MODEL_TIMEOUT)
                             .build();
                     chatModel = local;
@@ -345,7 +377,7 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
                     local = OpenAiStreamingChatModel.builder()
                             .baseUrl(OpenAiCompatibleBaseUrlNormalizer.normalize(properties.getBaseUrl()))
                             .apiKey(properties.getApiKey())
-                            .modelName(properties.getModelName())
+                            .modelName(effectiveModelName())
                             .timeout(MODEL_TIMEOUT)
                             .build();
                     streamingChatModel = local;
@@ -440,7 +472,7 @@ public class LangChain4jLlmRuntime implements LlmRuntime {
 
         Throwable error = errorRef.get();
         if (error != null) {
-            aiMetricsRecorder.recordRequest(properties.getModelName(), "stream", false, 0);
+            aiMetricsRecorder.recordRequest(effectiveModelName(), "stream", false, 0);
             throw new IllegalStateException("streaming chat completion failed", error);
         }
     }
