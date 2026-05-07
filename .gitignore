@@ -10,6 +10,8 @@ logs/
 .env
 frontend/node_modules/
 .claude
+guide
+cv/
 
 # Local-only: Claude Code session transcripts and personal resume drafts
 archive/sessions/
@@ -37,3 +39,4 @@ infra/cloud/prometheus-web.yml
 # happen to build separately. deploy.sh always re-runs `npm run build`
 # before `mvn package`, so the bundle is reproduced on every deploy.
 src/main/resources/static/
+docs/2026-05-05-deploy-cheatsheet.md
