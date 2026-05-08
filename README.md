@@ -1,158 +1,221 @@
-# Zhitu Agent Java
+# 知识问答与告警分析 Agent
 
-后端优先的 Java AI Agent 项目,在公开中文 retrieval benchmark(C-MTEB T2Retrieval)上拍出可解释的 RAG 检索数字 + 完整测试体系 + 真实云端部署。当前版本 = v3。
+面向运维知识问答与告警分析场景的 Java AI Agent 项目。后端基于 **Spring Boot 3.5 + LangChain4j 1.1** 构建,使用 LangChain4j 作为模型接入层,但核心链路编排、RAG 检索、工具治理、上下文管理和多 Agent 调度都由项目自行实现。
 
-> 项目背景:作者在找 Agent 开发实习,这是核心作品集项目。设计目标是**让面试官 clone 下来 5 分钟跑通,看到 RAG / Tool / Trace / 异步入库的全链路**,而不是又一个"OpenAI API 包一层 chat"的玩具。
+## 核心功能
 
-## 这个项目能讲什么(简历级)
+### 1. RAG 知识库
 
-- **真 ES 栈现代化**:从 v1 的 `pgvector + ILIKE 子串匹配伪 hybrid` 替换为 v3 的 **Elasticsearch 8.10 + IK 中文分词 + KNN+BM25+rescore 单次调用 native hybrid**
-- **MinIO + Tika + HanLP 多格式入库管线**:15 种文件格式 / 分片续传 / 内存阈值熔断 / 解析—嵌入—ES 一站式
-- **Kafka KRaft 异步管线**:`acks=all + idempotence=true + transactional.id` producer exactly-once + ES `_id=sha256(content)` 幂等吃掉 consumer 重投递 = exactly-once-effect
-- **C-MTEB rerank ablation**:Qwen3-Reranker-8B 在采样 fixture 上贡献 **+5.6 pp nDCG@10 / 3.8x p50 latency**,据此落地 SLA-aware 检索决策(详见 `docs/2026-05-04-cmteb-eval-baseline-vs-norerank.md`)
-- **多 agent 编排 + SRE 路由真功臣澄清**:routeAcc +0.20 提升真正来自 multi-agent SRE Phase 1 commit,**不是** ES 替换 — 用评测对比帮自己诚实归因
-- **完整测试体系**:217 单测 + 4 Kafka Testcontainers IT,`mvn verify` surefire/failsafe 拆分,无 Docker 环境自动 skip
-- **生产事故响应**:云端 ES 公网无认证被 ransomware bot 17 min 删光索引,处理:不付赎金 + IP 白名单 + xpack auth + IK 重装(写进 `feedback_infra_security.md`)
+构建了完整的 **文档上传 -> 解析切分 -> 向量化入库 -> 混合检索** 知识库链路:
 
-## 真栈(v3,2026-05-04)
+- 文件进入 MinIO 后由 Apache Tika 解析,HanLP 辅助中文句边界处理,按 parent-child chunk 写入知识库。
+- chunkId 基于 `sha256(source + content)` 生成,写 Elasticsearch 时作为 `_id`,重复入库会被 UPSERT 幂等吸收。
+- 检索层基于 **Elasticsearch 8.10 + IK 中文分词 + dense_vector**,支持 KNN 语义召回与 BM25 关键词召回。
+- 当前 ES 主路径把 **KNN + match + rescore** 放在单次 ES 调用内完成 native hybrid;非 native 路径保留 RRF/线性融合能力。
+- Top-N 召回后可接入 Reranker 重排。C-MTEB T2Retrieval 采样集上,Qwen3-Reranker-8B 让 nDCG@10 从 0.86 提升到 0.91,提升 **5.6 个百分点**。
+
+### 2. 会话记忆与上下文管理
+
+基于 Redis 持久化会话消息,在调 LLM 前由 `ContextManager` 统一打包上下文:
+
+- 上下文结构按 **系统提示词 + 历史摘要 + 用户稳定事实 + 最近消息 + RAG 检索证据 + 当前问题** 组织。
+- `MessageSummaryCompressor` 对长历史做摘要折叠,`FactExtractor` 通过规则抽取用户稳定事实。
+- token 超预算时按优先级动态裁剪:先裁旧消息,再裁旧事实,再移除摘要,最后压缩 evidence;同时保留最近 1 轮消息作为上下文下限。
+- 极端预算仍无法满足时,`contextStrategy` 会标记 `-overflow`,方便在 Trace 和日志中定位上下文失控。
+- `ContextManagerBenchmark` 显示:50 轮 SRE 问答场景输入 token 减少 **75.8%**,100 轮减少 **86.4%**,从 raw O(N) 增长收敛到约 1010 token。
+
+### 3. 工具治理与 MCP 扩展
+
+项目把内置工具和外部 MCP 工具统一收敛到 `ToolDefinition` 抽象:
+
+- 每个工具提供 name / description / JSON Schema 参数定义,并可导出 LangChain4j `ToolSpecification` 给 function calling 使用。
+- `ToolCallExecutor` 支持多个 tool call 并行执行,工具失败不会抛穿主链路,而是转成 observation 回投给 LLM。
+- 调用前会做 JSON Schema 参数校验、未知工具兜底、重复调用 loop 检测,降低参数幻觉和无效循环风险。
+- 对有副作用的工具支持 HITL 审批:工具调用先进入 `PendingToolCallStore`,前端/接口批准后才继续执行。
+- `McpToolAdapter` 将外部 MCP server 暴露的工具封装成内部 `ToolDefinition`,复用同一套执行、校验、审批与 Trace 链路。
+
+### 4. Agent 多轮执行循环
+
+基于 ReAct 思路实现 `AgentLoop`,把单趟"判断 -> 执行 -> 回答"升级为多轮循环:
+
+- 每轮由 LLM 产生思考结果或 tool call;有 tool call 时执行工具并把结果作为 observation 追加回上下文。
+- 默认最多 4 轮,防止 Agent 陷入无限循环;达到上限时返回带 partial observations 的降级结果。
+- `LoopDetector` 记录相同工具和参数的重复调用,第 3 次起转成显式失败信号。
+- SpanCollector 为每次 LLM 调用、工具调用和 Agent iteration 记录嵌套 span,前端可以展开 Trace 树查看决策过程。
+- 多 Agent 场景下可给每个 specialist 限定工具白名单,避免单个 Agent 暴露全量工具面。
+
+### 5. 告警分析 Agent 编排
+
+围绕 **告警解析 -> 处置手册检索 -> 日志/指标取证 -> 结果分析 -> 处理建议生成** 搭建了 SRE 告警分析流程:
+
+- `AlertController` 暴露 `POST /api/alert` 与 `POST /api/alert/stream`,支持同步报告和 SSE 流式阶段事件。
+- `MultiAgentOrchestrator` 由 supervisor LLM 决定下一步任务,最多 5 轮路由。
+- 默认 specialist 包括 `AlertTriageAgent`、`LogQueryAgent`、`ReportAgent`。
+- Triage 阶段先从知识库检索 runbook;LogQuery 阶段通过日志/指标工具取证;Report 阶段只基于已有事实生成 Markdown 分析报告。
+- 若 supervisor 未在轮次内进入 ReportAgent,编排器会触发安全阀补一次报告生成,保证告警请求有可读输出。
+
+## 其他能力
+
+- **异步文件入库**:Kafka KRaft producer 使用 `acks=all + idempotence=true + transactional.id`,HTTP 上传可立即返回 202;consumer 采用 at-least-once + DLT,ES `_id=chunkId` 吸收重投递,实现 exactly-once-effect。
+- **Self-RAG / Reflection**:`SelfRagOrchestrator` 与 `ReflectionLoop` 为检索质量判断、问题改写和回答自检保留了可扩展节点。
+- **评测体系**:内置 `BaselineEvalRunner`、`RankingMetrics`、C-MTEB fixture loader,指标覆盖 Hit / Recall / MRR / nDCG / latency / keyword coverage。
+- **可观测性**:Micrometer + Prometheus 指标、结构化日志、TraceArchive、嵌套 span tree、SSE stage 事件。
+- **前端控制台**:React + TypeScript 实现聊天、SSE 流式输出、Trace 折叠、HITL 审批、知识库弹窗和 SRE demo 面板。
+
+## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 语言 / 框架 | Java 21,Spring Boot 3.5,Maven Wrapper |
-| LLM 抽象 | LangChain4j 1.1(OpenAI 兼容协议)|
-| 向量库 | Elasticsearch 8.10 + analysis-ik(中文分词)+ dense_vector + KNN |
-| 文件存储 | MinIO + 分片续传 |
-| 解析 / 切片 | Apache Tika + HanLP(中文句边界感知)|
-| 缓存 / 会话 | Redis 7(bitmap chunk dedup)|
-| 异步 | Kafka 3.7 KRaft(单节点)+ DLT |
-| 评测 | 自实现 RankingMetrics(nDCG/Recall/MRR)+ C-MTEB T2Retrieval BEIR 格式 fixture |
-| 前端 | React + TypeScript(`frontend/`,SSE 流式 + Trace 折叠 + iMessage 气泡)|
-| Embedding / Rerank | Qwen3-Embedding-8B + Qwen3-Reranker-8B(SiliconFlow endpoint) |
+| 后端框架 | Java 21, Spring Boot 3.5, Maven Wrapper |
+| LLM 接入 | LangChain4j 1.1, OpenAI-compatible Chat / Embedding / Rerank endpoint |
+| 知识库 | Elasticsearch 8.10, IK 中文分词, dense_vector, KNN, BM25, rescore |
+| 文件入库 | MinIO, Apache Tika, HanLP, parent-child chunk, SHA-256 chunkId |
+| 异步管线 | Kafka 3.7 KRaft, transactional producer, at-least-once consumer, DLT |
+| 记忆与缓存 | Redis session / memory / upload bitmap, in-memory fallback |
+| Agent 编排 | ReAct AgentLoop, Supervisor + specialist multi-agent, HITL approval |
+| MCP | MCP Java SDK, stdio / streamable-http server config, MCP adapter |
+| 评测 | 自实现 IR metrics, C-MTEB T2Retrieval sampled fixture, benchmark profile |
+| 前端 | React 19, TypeScript, Vite, SSE, Trace panel |
 
-## 5 分钟跑通(面试官视角)
+## 架构概览
 
-### 0. 前置
-
-- Java 21 + Maven Wrapper
-- 一份 `.env`(向作者要,或用云端共享 .env)
-- 网络能访问 `106.12.190.62`(云端 ES + Redis + MinIO + Kafka)— 或者改连本地 docker
-
-### 1. clone + 配置
-
-```bash
-git clone <repo>
-cd zhitu-agent-java
-cp .env.example .env    # 填 ES/Redis/MinIO/Kafka 密码 + LLM API key
+```mermaid
+flowchart LR
+    Client[Chat / File / Alert API] --> Chat[ChatService / AlertController]
+    Chat --> Context[ContextManager]
+    Context --> Memory[Redis Memory]
+    Chat --> RAG[RagRetriever]
+    RAG --> ES[Elasticsearch KNN + BM25]
+    RAG --> Rerank[Reranker]
+    Chat --> Loop[ReAct AgentLoop]
+    Loop --> Tools[ToolCallExecutor]
+    Tools --> Builtin[Built-in Tools]
+    Tools --> MCP[MCP Tool Adapter]
+    Alert[Alert JSON] --> Supervisor[MultiAgentOrchestrator]
+    Supervisor --> Triage[AlertTriageAgent]
+    Supervisor --> Log[LogQueryAgent]
+    Supervisor --> Report[ReportAgent]
+    Upload[File Upload] --> MinIO[MinIO]
+    MinIO --> Tika[Tika + HanLP]
+    Tika --> Kafka[Kafka Async Pipeline]
+    Kafka --> ES
 ```
 
-### 2. 跑测试(确认环境 OK)
+## 本地快速启动
+
+### 1. 环境要求
+
+- Java 21
+- Node.js + npm(仅前端需要)
+- Redis / Elasticsearch / MinIO / Kafka / Docker / npx
+
+真实链路需要在 `.env` 中配置模型和中间件连接信息。
+
+### 2. 启动后端
+
+mock / in-memory 快速启动:
 
 ```bash
-./mvnw -o test               # 217 单测 ~30s
-./mvnw -o verify             # +4 Kafka Testcontainers IT(需 Docker;无 Docker 自动 skip)
+./mvnw spring-boot:run
 ```
 
-### 3. 启动后端
+真实 LLM + ES / Redis / MinIO / Kafka 链路使用 `.env` 开关:
+
+```properties
+ZHITU_LLM_MOCK_MODE=false
+ZHITU_CHAT_BASE_URL=
+ZHITU_CHAT_API_KEY=
+ZHITU_CHAT_MODEL_NAME=
+
+ZHITU_EMBEDDING_URL=
+ZHITU_EMBEDDING_API_KEY=
+ZHITU_EMBEDDING_MODEL_NAME=
+ZHITU_EMBEDDING_DIMENSIONS=
+
+ZHITU_RERANK_ENABLED=true
+ZHITU_RERANK_URL=
+ZHITU_RERANK_API_KEY=
+ZHITU_RERANK_MODEL_NAME=
+
+ZHITU_REDIS_ENABLED=true
+ZHITU_ES_ENABLED=true
+ZHITU_MINIO_ENABLED=true
+ZHITU_KAFKA_ENABLED=false
+```
+
+启动:
 
 ```bash
-./mvnw -o spring-boot:run -Dspring-boot.run.profiles=local
-# 启动日志看到这一行就 OK:
-# ZhituAgent active stores: KnowledgeStore=ElasticsearchKnowledgeStore (nativeHybrid=true), ...
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-### 4. 启动前端(可选)
+### 3. 启动前端
 
 ```bash
-cd frontend && npm install && npm run dev   # http://localhost:5173
+cd frontend
+npm install
+npm run dev
 ```
 
-### 5. 跑 4 个核心 demo(每个 < 1 min)
+默认访问 `http://localhost:5173`。
 
-```bash
-# (a) 普通对话 + RAG
-curl -N -H "Content-Type: application/json" \
-  -d '{"sessionId":"demo","message":"什么是 Apache Tika"}' \
-  http://localhost:8080/api/streamChat
-# 看 trace.path / retrievalHit / topSource / topScore
-
-# (b) 同步文件上传 + 入库
-curl -F file=@docs/m2-smoke-sample.txt http://localhost:8080/api/files/upload
-# 返回 200 + chunkCount,等 1-3s ES 立即可查
-
-# (c) 异步文件上传(Kafka 异步管线)
-ZHITU_KAFKA_ENABLED=true ./mvnw -o spring-boot:run -Dspring-boot.run.profiles=local
-curl -i -F file=@docs/m2-smoke-sample.txt http://localhost:8080/api/files/upload
-# 立即返回 202 + uploadId,后台 consumer 跑 Tika+embed+ES bulk
-curl http://localhost:8080/api/files/status/{uploadId}
-# parseStatus: QUEUED → PARSING → INDEXED
-
-# (d) 跑 C-MTEB rerank ablation(reuse baseline ES index,~17 min)
-./mvnw -o spring-boot:run -Dspring-boot.run.profiles=local \
-  -Dspring-boot.run.arguments="--server.port=0 \
-    --zhitu.eval.exit-after-run=true \
-    --zhitu.eval.cmteb.enabled=true \
-    --zhitu.eval.cmteb.label=no-rerank \
-    --zhitu.eval.cmteb.retrieval-mode=hybrid \
-    --zhitu.eval.cmteb.skip-ingest=true \
-    --zhitu.elasticsearch.index-name=zhitu_agent_eval_cmteb_baseline \
-    --zhitu.rerank.final-top-k=50 \
-    --zhitu.rag.min-accepted-score=0.0"
-# 报告落到 target/eval-reports/cmteb-no-rerank-{ts}.json
-```
-
-## 主要 HTTP 接口
+## 常用接口
 
 | 路径 | 用途 |
 |---|---|
 | `GET /api/healthz` | 健康检查 |
 | `POST /api/sessions` | 创建会话 |
-| `POST /api/chat` | 单轮对话 |
-| `POST /api/streamChat` | SSE 流式对话(主入口)|
-| `POST /api/files/upload` | 文件上传(同步 200 / 异步 202)|
-| `GET /api/files/status/{uploadId}` | 异步入库状态查询 |
-| `POST /api/knowledge` | 直接 ingest 文本(跳过文件解析)|
-| `POST /api/sse/sre/{requestId}` | Multi-agent SRE 流式 demo(前端 SRE 面板)|
+| `GET /api/sessions/{sessionId}` | 查看会话历史 |
+| `POST /api/chat` | 普通 JSON 对话 |
+| `POST /api/streamChat` | SSE 流式对话主入口 |
+| `POST /api/knowledge` | 直接写入文本知识 |
+| `POST /api/files/upload` | 文件上传;同步 200 或异步 202 |
+| `POST /api/files/chunk` | 分片上传 |
+| `POST /api/files/merge` | 合并分片并触发入库 |
+| `GET /api/files/status/{uploadId}` | 查询异步解析状态 |
+| `GET /api/tool-calls/pending` | 查询待审批工具调用 |
+| `POST /api/tool-calls/{id}/approve` | 批准 HITL 工具调用 |
+| `POST /api/tool-calls/{id}/deny` | 拒绝 HITL 工具调用 |
+| `POST /api/alert` | 告警分析同步报告 |
+| `POST /api/alert/stream` | 告警分析 SSE 阶段流 |
+| `GET /actuator/prometheus` | Prometheus metrics |
 
-## 关键文档(深度细节)
+## Demo 命令
 
-- **`CLAUDE.md`** — 给 AI 协作者看的工作笔记,包含 TL;DR / 协作模式 / 当前状态速查 / 简历叙事框架。**新会话先 read 这个,30 秒进入工作状态**
-- **`docs/optimize-progress.md`** — 项目主进度,完整 A-1..A-7 + 阶段 3 M1-M5 + v3-eval 章节
-- **`docs/2026-05-04-cmteb-eval-baseline-vs-norerank.md`** — C-MTEB rerank ablation 报告(含 sampling 边界声明)
-- **`docs/2026-04-27-zhitu-agent-java-design.md`** — v1 设计文档(历史锚点)
-- **`docs/2026-05-01-multi-agent-execution-handbook.md`** — Multi-agent SRE 编排
-- **`AGENTS.md`** — 长期协作 / 密钥 / 基础设施约束
-- **`infra/cloud/docker-compose.yml`** — 云端中间件部署(ES auth + Kafka + Redis + MinIO)
-
-## 评测体系(retrieval-only)
+普通对话 / RAG:
 
 ```bash
-# (1) 拉 C-MTEB T2Retrieval fixture(一次性)
-cd tools/eval
-python -m venv .venv && .venv/Scripts/activate
-pip install -r requirements.txt
-python fetch_cmteb.py --num-queries 300 --num-corpus 2000 --seed 42
-
-# (2) 跑 baseline(~50 min)/ no-rerank(~17 min)看上面 demo (d)
-
-# (3) 聚合两组结果到对比 markdown
-python tools/eval/aggregate_sweep.py
-# 输出 target/eval-reports/cmteb-sweep-{ts}.{md,json}
+curl -N -H "Content-Type: application/json" \
+  -d '{"sessionId":"demo","message":"什么是 Apache Tika?"}' \
+  http://localhost:8080/api/streamChat
 ```
 
-数字结论:在采样 fixture(2000 corpus / 300 queries)上,**rerank 贡献 +5.6 pp nDCG@10 但 3.8x p50 latency**。绝对值不对标 MTEB leaderboard(corpus 只有完整 T2Retrieval 的 1/60),Δ 才是这次评测的真信号。
+文件入库:
 
-## 当前观测能力
+```bash
+curl -F file=@docs/m2-smoke-sample.txt http://localhost:8080/api/files/upload
+```
 
-控制台日志:请求完成 / 路由决策 / RAG 检索 / 模型调用 / 异常 + 结构化字段(latencyMs / tokenEstimate)
-返回给前端的 `trace`:`path` / `retrievalHit` / `topSource` / `topScore` / `retrievalMode` / `requestId` / 嵌套 span 树
+告警分析:
 
-## 已知限制(诚实清单)
+```bash
+curl -N -H "Content-Type: application/json" \
+  --data-binary @src/main/resources/sre-fixtures/alerts/alert-001.json \
+  http://localhost:8080/api/alert/stream
+```
 
-1. C-MTEB 评测只跑了采样版(2K corpus),完整 118K corpus 评测因 token 成本未做
-2. chunk-size sweep / overlap sweep / embedding 模型对比都未做(zombie JVM 死锁烧 token 后缩减)
-3. ElasticsearchKnowledgeStore 缺独立 IT(hybrid DSL 只靠云端 smoke 验证;Kafka 都用 Testcontainers,ES 同样可以加)
-4. Frontend 未做 e2e 测试
+重要数字:
+
+| 实验 | 结果 |
+|---|---|
+| C-MTEB rerank ablation | nDCG@10 0.8554 -> 0.9117,+5.6 pp;p50 latency 1.5s -> 5.6s |
+| ContextManager benchmark | 50 轮输入 token -75.8%,100 轮 -86.4% |
+
+
+## 已知边界
+
+1. C-MTEB 目前使用采样 fixture(2000 corpus / 300 queries),绝对值不直接对标完整 MTEB leaderboard;同 fixture 内 ablation 的 Delta 才是有效信号。
 
 ## License
 
-私有作品集项目,未公开发布。
+MIT
