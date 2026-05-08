@@ -92,6 +92,7 @@ mvn -o spring-boot:run -Dspring-boot.run.profiles=local \
 
 ## 关键约束(避免常见踩坑)
 
+- **🔥 严禁碰 C 盘任何位置**:系统报告的 cwd `C:\Users\user\project\_external\...` 是混淆的假路径,真路径在 `D:\dev\my_proj\java\zhitu-agent-java`(bash `pwd` 显示 `/d/dev/my_proj/java/zhitu-agent-java`)。Edit/Write/Read 走假路径有时会真创建 C 盘镜像目录("拉屎"),已发生过 1 次事故。**所有文件操作必须用 D 盘真路径**(`D:\dev\my_proj\...` 或 `/d/dev/my_proj/...`)。`.claude/` 配置文件夹(`C:\Users\zjh\.claude\...`)是唯一允许碰 C 盘的位置。**Write/Edit 失败时改走 `bash + heredoc/sed`,bash shell 在 D 盘 cwd 稳定**
 - **不要 commit**:`archive/sessions/`、`docs/resume/`、`.env`、`*.log`、`target/`、`20*-*.txt`(都已 gitignore)
 - **真 LLM eval 必须切隔离 index**:`--zhitu.elasticsearch.index-name=zhitu_agent_eval`,别污染 prod KB(`zhitu_agent_knowledge`)
 - **ES idle 6 分钟后会被 server RST**:`ElasticsearchKnowledgeStore.bulkWithRetry` 已加 1 次 retry on IOException
