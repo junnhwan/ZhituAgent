@@ -172,6 +172,10 @@ public class AgentLoop {
                     messages.add(SystemMessage.from("Conversation summary: " + raw.substring("SUMMARY:".length()).trim()));
                     continue;
                 }
+                if (raw.startsWith("FACTS:")) {
+                    messages.add(SystemMessage.from("Stable user facts: " + raw.substring("FACTS:".length()).trim()));
+                    continue;
+                }
                 if (raw.startsWith("EVIDENCE:")) {
                     messages.add(SystemMessage.from("Reference evidence:\n" + raw.substring("EVIDENCE:".length()).trim()));
                     continue;

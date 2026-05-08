@@ -11,6 +11,7 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -163,6 +165,51 @@ class AgentLoopTest {
         assertThat(stub.lastSpecsSeen)
                 .extracting(ToolSpecification::name)
                 .containsExactlyInAnyOrder("time", "second");
+
+        executor.shutdown();
+        spanCollector.drain();
+    }
+
+    @Test
+    void shouldHydrateFactsBlockAsSystemMessage() {
+        AtomicReference<List<ChatMessage>> capturedMessages = new AtomicReference<>();
+        StubLlm stub = new StubLlm(messages -> {
+            capturedMessages.set(messages);
+            return ChatTurnResult.ofText("ok");
+        });
+
+        SpanCollector spanCollector = new SpanCollector();
+        spanCollector.beginTrace();
+        spanCollector.startSpan("chat.turn", "request");
+
+        ToolRegistry registry = new ToolRegistry(List.of());
+        ToolCallExecutor executor = new ToolCallExecutor(registry);
+        AgentLoop loop = new AgentLoop(stub, registry, executor, spanCollector);
+
+        ContextBundle bundle = new ContextBundle(
+                "system-prompt",
+                "summary text",
+                List.of(),
+                List.of("我叫小智", "我做 Agent 后端"),
+                "current question",
+                List.of(
+                        "SYSTEM: system-prompt",
+                        "SUMMARY: summary text",
+                        "FACTS: 我叫小智 | 我做 Agent 后端",
+                        "USER: current question"
+                ),
+                "recent-summary-facts"
+        );
+
+        loop.run("system-prompt", "current question", bundle, Map.of(), 4);
+
+        List<ChatMessage> messages = capturedMessages.get();
+        assertThat(messages).isNotNull();
+        assertThat(messages)
+                .anyMatch(m -> m instanceof SystemMessage
+                        && ((SystemMessage) m).text().contains("Stable user facts:"))
+                .anyMatch(m -> m instanceof SystemMessage
+                        && ((SystemMessage) m).text().contains("我叫小智"));
 
         executor.shutdown();
         spanCollector.drain();

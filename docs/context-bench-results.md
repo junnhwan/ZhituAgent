@@ -153,3 +153,35 @@ mvn -o spring-boot:run -Dspring-boot.run.profiles=local \
 1. **`keepRecentN` 硬保底**:当前最近消息可被裁完,Anthropic 推荐保留最后 N 条 most-recent。加 `minKeepRecentMessages=2` 防极端预算下历史完全丢失
 2. **`AgentLoop.bootstrap` FACTS 块处理 bug fix**:`FACTS:` 前缀走 fallback 当成 `UserMessage`,应转 `SystemMessage`
 3. **`MemoryMetricsRecorder.recordContextInputTokens`**:加 Micrometer DistributionSummary,把 raw / budgeted token 数 + strategy 实时落 Prometheus,Grafana 可看裁剪比例分布
+
+---
+
+## 8. keepRecentN 保底 + AgentLoop FACTS bug fix(2026-05-08, commit 2)
+
+### keepRecentN 保底(对标 Anthropic preserve-recent-N)
+
+`ContextManager.budgetContext` Tier 1(裁旧 recent)的 while loop 加保底条件 `recentMessages.size() > minKeepRecentMessages`,默认 `minKeepRecentMessages=2`(即至少保留最后 1 轮 user+assistant)。
+
+**为什么不一裁到底**:Anthropic [context engineering 文档](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) 明确推荐"preserve recent N turns",理由是即使预算极小,LLM 至少需要"用户当前在说什么"的最近上下文,否则跨工具调用 / 多轮对话立刻断片。本项目原 Tier 1 是无脑 `while !recentMessages.isEmpty()`,极端预算下会清空全部对话历史 — 这是个易被面试追问的设计漏洞。
+
+**`-overflow` 信号**:四级裁剪全跑完仍超预算时,`contextStrategy` 加 `-overflow` 后缀(例 `recent-summary-facts-budgeted-overflow`)。这种情况意味着系统 prompt + minKeepRecent + 1 fact + halved evidence + current msg 的"硬下限"已经超过 `maxInputTokens`,只能让 LLM 自己截。Trace 看到 `-overflow` 是运维信号,提示要么调大 budget 要么精简 system prompt。
+
+### AgentLoop.bootstrap FACTS 块 bug fix(顺手)
+
+`AgentLoop.bootstrap` 拆 `ContextBundle.modelMessages()` 时识别 `SYSTEM:` / `SUMMARY:` / `EVIDENCE:` / `USER:` / `ASSISTANT:` 五个前缀,**唯独漏了 `FACTS:`** —— 走 fallback 当成 `UserMessage` 多塞了一条用户消息。本来该是 `SystemMessage`(stable user facts 是 system-level 上下文,不是 user 又问一遍)。
+
+**修复**:在 `SUMMARY:` 块之后插入 `FACTS:` 块处理:`SystemMessage.from("Stable user facts: " + ...)`。1 单测覆盖(`AgentLoopTest.shouldHydrateFactsBlockAsSystemMessage`)。
+
+### 测试
+
+| Test | 验证 |
+|---|---|
+| `ContextManagerTest.shouldKeepMinimumRecentMessagesEvenUnderTightBudget` | tight budget(maxInput=120,6 条 recent)下 `recentMessages.size() >= 2` |
+| `ContextManagerTest.shouldStampOverflowWhenBudgetCannotBeMetEvenAfterAllTiers` | absurd budget(maxInput=40,sysPrompt 已 100+)下 `contextStrategy` 以 `-overflow` 结尾,floor 仍守住 `>= 2` |
+| `AgentLoopTest.shouldHydrateFactsBlockAsSystemMessage` | `FACTS: 我叫小智 \| 我做 Agent 后端` 被转成 `SystemMessage("Stable user facts: ...")`,不是 `UserMessage` |
+
+`mvn -o test`:**261/261 全绿**(258 baseline + 3 new)。
+
+### 简历叙事增量(commit 2 → 简历 bullet 升级)
+
+> 在版本 A 基础上加:`...Tier 1 裁旧消息保留至少最近 1 轮(对标 Anthropic context engineering preserve-recent-N 模式),四级裁剪后仍超预算则 strategy 标记 -overflow 让运维信号可观测;评测路径上同时拍出并修复 AgentLoop.bootstrap 漏处理 FACTS: 前缀的 bug — 原来 stable user facts 块被当成 UserMessage 多塞,改回 SystemMessage 让 system-level 稳定上下文角色正确`

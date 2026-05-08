@@ -88,6 +88,60 @@ class ContextManagerTest {
         assertThat(bundle.modelMessages().getLast()).contains("请结合当前背景继续给我建议");
     }
 
+
+    @Test
+    void shouldKeepMinimumRecentMessagesEvenUnderTightBudget() {
+        // Tight budget — system prompt + 1 fact alone trips Tier 1, but keepRecentN=2
+        // floor must prevent the trimmer from clearing recent history entirely.
+        ContextManager contextManager = new ContextManager(120, 30, 30, 30, 30);
+
+        ContextBundle bundle = contextManager.build(
+                "你是测试助手",
+                new com.zhituagent.memory.MemorySnapshot(
+                        "比较长的会话总结,讨论上下文管理与裁剪策略。",
+                        List.of(
+                                message("user", "第一轮特别长的问题,讨论方案 A。"),
+                                message("assistant", "第一轮特别长的回答,解释 A 的取舍。"),
+                                message("user", "第二轮长问题,继续追问预算控制。"),
+                                message("assistant", "第二轮长回答,说明 recent/summary 优先级。"),
+                                message("user", "第三轮短问题。"),
+                                message("assistant", "第三轮短回答。")
+                        ),
+                        List.of("我叫小智")
+                ),
+                "请结合当前背景继续给建议",
+                "RAG 证据段。"
+        );
+
+        assertThat(bundle.recentMessages()).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(bundle.contextStrategy()).contains("-budgeted");
+        // Strategy may carry -overflow if the floor is hit and budget still over;
+        // either way the floor itself must not be violated.
+    }
+
+    @Test
+    void shouldStampOverflowWhenBudgetCannotBeMetEvenAfterAllTiers() {
+        // Absurdly small budget — even the irreducible floor (system prompt +
+        // minKeepRecent + halved evidence + current msg) cannot fit.
+        ContextManager contextManager = new ContextManager(40, 10, 10, 10, 10);
+
+        ContextBundle bundle = contextManager.build(
+                "你是一个非常长的系统提示符,这段话本身就远超 40 token 预算,任何动态部分加进来都不可能在 40 token 内塞下。",
+                new com.zhituagent.memory.MemorySnapshot(
+                        "总结",
+                        List.of(
+                                message("user", "短问题"),
+                                message("assistant", "短回答")
+                        ),
+                        List.of("我叫小智")
+                ),
+                "当前问题",
+                "证据"
+        );
+
+        assertThat(bundle.contextStrategy()).endsWith("-overflow");
+        assertThat(bundle.recentMessages()).hasSizeGreaterThanOrEqualTo(2);
+    }
     private ChatMessageRecord message(String role, String content) {
         return new ChatMessageRecord(role, content, OffsetDateTime.now());
     }

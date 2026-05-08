@@ -17,9 +17,11 @@ public class ContextManager {
     private static final int DEFAULT_MAX_FACTS_TOKENS = 120;
     private static final int DEFAULT_MAX_EVIDENCE_TOKENS = 240;
     private static final int DEFAULT_MAX_MESSAGE_TOKENS = 120;
+    private static final int DEFAULT_MIN_KEEP_RECENT_MESSAGES = 2;
     private static final String BASE_STRATEGY = "recent-summary";
     private static final String FACTS_SUFFIX = "-facts";
     private static final String BUDGETED_SUFFIX = "-budgeted";
+    private static final String OVERFLOW_SUFFIX = "-overflow";
 
     private final TokenEstimator tokenEstimator;
     private final int maxInputTokens;
@@ -27,6 +29,7 @@ public class ContextManager {
     private final int maxFactsTokens;
     private final int maxEvidenceTokens;
     private final int maxMessageTokens;
+    private final int minKeepRecentMessages;
 
     public ContextManager() {
         this(
@@ -35,7 +38,8 @@ public class ContextManager {
                 DEFAULT_MAX_SUMMARY_TOKENS,
                 DEFAULT_MAX_FACTS_TOKENS,
                 DEFAULT_MAX_EVIDENCE_TOKENS,
-                DEFAULT_MAX_MESSAGE_TOKENS
+                DEFAULT_MAX_MESSAGE_TOKENS,
+                DEFAULT_MIN_KEEP_RECENT_MESSAGES
         );
     }
 
@@ -47,7 +51,8 @@ public class ContextManager {
                 contextProperties.getMaxSummaryTokens(),
                 contextProperties.getMaxFactsTokens(),
                 contextProperties.getMaxEvidenceTokens(),
-                contextProperties.getMaxMessageTokens()
+                contextProperties.getMaxMessageTokens(),
+                contextProperties.getMinKeepRecentMessages()
         );
     }
 
@@ -62,7 +67,25 @@ public class ContextManager {
                 maxSummaryTokens,
                 maxFactsTokens,
                 maxEvidenceTokens,
-                maxMessageTokens
+                maxMessageTokens,
+                DEFAULT_MIN_KEEP_RECENT_MESSAGES
+        );
+    }
+
+    ContextManager(int maxInputTokens,
+                   int maxSummaryTokens,
+                   int maxFactsTokens,
+                   int maxEvidenceTokens,
+                   int maxMessageTokens,
+                   int minKeepRecentMessages) {
+        this(
+                new TokenEstimator(),
+                maxInputTokens,
+                maxSummaryTokens,
+                maxFactsTokens,
+                maxEvidenceTokens,
+                maxMessageTokens,
+                minKeepRecentMessages
         );
     }
 
@@ -71,13 +94,15 @@ public class ContextManager {
                    int maxSummaryTokens,
                    int maxFactsTokens,
                    int maxEvidenceTokens,
-                   int maxMessageTokens) {
+                   int maxMessageTokens,
+                   int minKeepRecentMessages) {
         this.tokenEstimator = tokenEstimator;
         this.maxInputTokens = maxInputTokens;
         this.maxSummaryTokens = maxSummaryTokens;
         this.maxFactsTokens = maxFactsTokens;
         this.maxEvidenceTokens = maxEvidenceTokens;
         this.maxMessageTokens = maxMessageTokens;
+        this.minKeepRecentMessages = Math.max(0, minKeepRecentMessages);
     }
 
     public ContextBundle build(String systemPrompt,
@@ -121,36 +146,47 @@ public class ContextManager {
 
         List<String> modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
 
-        while (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens && !recentMessages.isEmpty()) {
+        // Tier 1: drop oldest recent messages, keep at least minKeepRecentMessages
+        // (Anthropic context engineering "preserve last N turns" pattern).
+        while (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens
+                && recentMessages.size() > minKeepRecentMessages) {
             recentMessages = new ArrayList<>(recentMessages.subList(1, recentMessages.size()));
             budgeted = true;
             modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
         }
 
+        // Tier 2: drop oldest facts (keep at least 1).
         while (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens && facts.size() > 1) {
             facts = new ArrayList<>(facts.subList(1, facts.size()));
             budgeted = true;
             modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
         }
 
+        // Tier 3: drop summary entirely.
         if (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens && summary != null && !summary.isBlank()) {
             summary = "";
             budgeted = true;
             modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
         }
 
+        // Tier 4: halve evidence.
         if (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens && evidence != null && !evidence.isBlank()) {
             evidence = trimToTokenLimit(evidence, Math.max(24, maxEvidenceTokens / 2));
             budgeted = true;
             modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
         }
 
+        // After all four tiers: stamp -overflow if still over budget so the floor
+        // is observable (e.g. system prompt + minKeepRecent + 1 fact + halved
+        // evidence + current msg already exceeds maxInputTokens).
+        boolean overflow = tokenEstimator.estimateMessages(modelMessages) > maxInputTokens;
+
         return new BudgetedContext(
                 summary,
                 List.copyOf(recentMessages),
                 List.copyOf(facts),
                 evidence,
-                resolveContextStrategy(facts, budgeted)
+                resolveContextStrategy(facts, budgeted, overflow)
         );
     }
 
@@ -248,13 +284,16 @@ public class ContextManager {
         return best;
     }
 
-    private String resolveContextStrategy(List<String> facts, boolean budgeted) {
+    private String resolveContextStrategy(List<String> facts, boolean budgeted, boolean overflow) {
         String strategy = BASE_STRATEGY;
         if (facts != null && !facts.isEmpty()) {
             strategy += FACTS_SUFFIX;
         }
         if (budgeted) {
             strategy += BUDGETED_SUFFIX;
+        }
+        if (overflow) {
+            strategy += OVERFLOW_SUFFIX;
         }
         return strategy;
     }

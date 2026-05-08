@@ -13,6 +13,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * ~170 tokens of headroom for short-history cases while still triggering the
  * budget loop on long contexts (see {@code context-budget-001} fixture case).
  *
+ * <p>{@code minKeepRecentMessages=2} keeps at least the last user/assistant
+ * turn even under tight budget — mirrors the Anthropic context engineering
+ * "preserve last N turns" pattern so trimming never drops the immediate
+ * conversation context entirely. When budget overflow persists after all four
+ * trim tiers run, {@link com.zhituagent.context.ContextManager} stamps the
+ * strategy with an {@code -overflow} suffix so the signal is observable.
+ *
  * <p>Override via {@code zhitu.context.max-input-tokens=...}; ablation
  * benchmarks set this to {@code Integer.MAX_VALUE / 2} (~1B) to run a
  * disabled-budget control group against the default-on group.
@@ -25,6 +32,7 @@ public class ContextProperties {
     private int maxFactsTokens = 120;
     private int maxEvidenceTokens = 240;
     private int maxMessageTokens = 120;
+    private int minKeepRecentMessages = 2;
 
     public int getMaxInputTokens() {
         return maxInputTokens;
@@ -64,5 +72,13 @@ public class ContextProperties {
 
     public void setMaxMessageTokens(int maxMessageTokens) {
         this.maxMessageTokens = maxMessageTokens;
+    }
+
+    public int getMinKeepRecentMessages() {
+        return minKeepRecentMessages;
+    }
+
+    public void setMinKeepRecentMessages(int minKeepRecentMessages) {
+        this.minKeepRecentMessages = minKeepRecentMessages;
     }
 }
