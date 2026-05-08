@@ -130,6 +130,40 @@ public class ContextManager {
         );
     }
 
+    /**
+     * Estimates the upstream "naive concat" input token count — what would be sent
+     * to the LLM if no trimming were applied (system prompt + summary + all facts
+     * + all recent messages + evidence + current message). Used by metrics callers
+     * to compute raw vs budgeted reduction ratios.
+     */
+    public long estimateRawTokens(String systemPrompt,
+                                  MemorySnapshot memorySnapshot,
+                                  String currentMessage,
+                                  String ragEvidence) {
+        long total = tokenEstimator.estimateText(systemPrompt);
+        if (memorySnapshot != null) {
+            total += tokenEstimator.estimateText(memorySnapshot.summary());
+            for (String fact : safeList(memorySnapshot.facts())) {
+                total += tokenEstimator.estimateText(fact);
+            }
+            for (com.zhituagent.memory.ChatMessageRecord msg : safeList(memorySnapshot.recentMessages())) {
+                total += tokenEstimator.estimateText(msg.content());
+            }
+        }
+        total += tokenEstimator.estimateText(ragEvidence);
+        total += tokenEstimator.estimateText(currentMessage);
+        return total;
+    }
+
+    /**
+     * Estimates the budgeted input token count for the post-trim model messages,
+     * exposing the package-private TokenEstimator so callers without DI access
+     * don't have to instantiate their own.
+     */
+    public long estimateMessages(List<String> modelMessages) {
+        return tokenEstimator.estimateMessages(modelMessages);
+    }
+
     private BudgetedContext budgetContext(String systemPrompt,
                                           MemorySnapshot memorySnapshot,
                                           String currentMessage,

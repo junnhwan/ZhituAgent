@@ -12,6 +12,7 @@ import com.zhituagent.context.ContextBundle;
 import com.zhituagent.context.ContextManager;
 import com.zhituagent.llm.LlmRuntime;
 import com.zhituagent.metrics.ChatMetricsRecorder;
+import com.zhituagent.metrics.MemoryMetricsRecorder;
 import com.zhituagent.metrics.ToolMetricsRecorder;
 import com.zhituagent.memory.MemoryService;
 import com.zhituagent.orchestrator.AgentOrchestrator;
@@ -53,6 +54,7 @@ public class ChatController {
     private final AgentOrchestrator agentOrchestrator;
     private final ChatTraceFactory chatTraceFactory;
     private final ChatMetricsRecorder chatMetricsRecorder;
+    private final MemoryMetricsRecorder memoryMetricsRecorder;
     private final ToolMetricsRecorder toolMetricsRecorder;
     private final TraceArchiveService traceArchiveService;
     private final ObjectMapper objectMapper;
@@ -66,6 +68,7 @@ public class ChatController {
                           AgentOrchestrator agentOrchestrator,
                           ChatTraceFactory chatTraceFactory,
                           ChatMetricsRecorder chatMetricsRecorder,
+                          MemoryMetricsRecorder memoryMetricsRecorder,
                           ToolMetricsRecorder toolMetricsRecorder,
                           TraceArchiveService traceArchiveService,
                           ObjectMapper objectMapper,
@@ -79,6 +82,7 @@ public class ChatController {
         this.agentOrchestrator = agentOrchestrator;
         this.chatTraceFactory = chatTraceFactory;
         this.chatMetricsRecorder = chatMetricsRecorder;
+        this.memoryMetricsRecorder = memoryMetricsRecorder;
         this.toolMetricsRecorder = toolMetricsRecorder;
         this.traceArchiveService = traceArchiveService;
         this.objectMapper = objectMapper;
@@ -130,12 +134,14 @@ public class ChatController {
                     emitToolLifecycle(emitter, routeDecision);
                 }
 
-                contextBundle = contextManager.build(
-                        systemPrompt,
-                        memoryService.snapshot(request.sessionId()),
-                        request.message(),
-                        buildEvidenceBlock(routeDecision)
-                );
+                com.zhituagent.memory.MemorySnapshot snapshot = memoryService.snapshot(request.sessionId());
+                String evidenceBlock = buildEvidenceBlock(routeDecision);
+                contextBundle = contextManager.build(systemPrompt, snapshot, request.message(), evidenceBlock);
+                if (contextBundle != null) {
+                    long rawTokens = contextManager.estimateRawTokens(systemPrompt, snapshot, request.message(), evidenceBlock);
+                    long budgetedTokens = contextManager.estimateMessages(contextBundle.modelMessages());
+                    memoryMetricsRecorder.recordContextInputTokens(rawTokens, budgetedTokens, contextBundle.contextStrategy());
+                }
 
                 emitStage(emitter, "generating", Map.of());
 

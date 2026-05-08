@@ -1,6 +1,7 @@
 package com.zhituagent.metrics;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +27,45 @@ public class MemoryMetricsRecorder {
                 .tag("store", safe(store))
                 .register(meterRegistry)
                 .increment();
+    }
+
+    /**
+     * Records the input-token shape produced by ContextManager for a single LLM call.
+     *
+     * <p>Two distribution summaries — phase=raw (system + facts + full history +
+     * evidence + current, naive concat) and phase=budgeted (after four-tier
+     * trimming) — let Grafana plot reduction ratios per strategy. A counter
+     * tracks cumulative saved tokens for high-level cost-savings dashboards.
+     *
+     * @param rawTokens       upstream input token estimate before trimming
+     * @param budgetedTokens  input token estimate after ContextManager.build()
+     * @param strategy        contextStrategy stamp (e.g. recent-summary-facts-budgeted)
+     */
+    public void recordContextInputTokens(long rawTokens, long budgetedTokens, String strategy) {
+        if (meterRegistry == null) {
+            return;
+        }
+        String strategyTag = safe(strategy);
+        DistributionSummary.builder("zhitu_context_input_tokens")
+                .tag("phase", "raw")
+                .tag("strategy", strategyTag)
+                .baseUnit("tokens")
+                .register(meterRegistry)
+                .record(Math.max(0, rawTokens));
+        DistributionSummary.builder("zhitu_context_input_tokens")
+                .tag("phase", "budgeted")
+                .tag("strategy", strategyTag)
+                .baseUnit("tokens")
+                .register(meterRegistry)
+                .record(Math.max(0, budgetedTokens));
+        long saved = Math.max(0, rawTokens - budgetedTokens);
+        if (saved > 0) {
+            Counter.builder("zhitu_context_token_reduction_total")
+                    .tag("strategy", strategyTag)
+                    .baseUnit("tokens")
+                    .register(meterRegistry)
+                    .increment(saved);
+        }
     }
 
     private String safe(String value) {

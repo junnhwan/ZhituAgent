@@ -9,6 +9,7 @@ import com.zhituagent.context.ContextManager;
 import com.zhituagent.llm.LlmRuntime;
 import com.zhituagent.memory.MemoryService;
 import com.zhituagent.metrics.ChatMetricsRecorder;
+import com.zhituagent.metrics.MemoryMetricsRecorder;
 import com.zhituagent.metrics.ToolMetricsRecorder;
 import com.zhituagent.orchestrator.AgentLoop;
 import com.zhituagent.orchestrator.AgentOrchestrator;
@@ -48,6 +49,7 @@ public class ChatService {
     private final com.zhituagent.agent.ReflectionLoop reflectionLoop;
     private final ChatTraceFactory chatTraceFactory;
     private final ChatMetricsRecorder chatMetricsRecorder;
+    private final MemoryMetricsRecorder memoryMetricsRecorder;
     private final ToolMetricsRecorder toolMetricsRecorder;
     private final TraceArchiveService traceArchiveService;
     private final SpanCollector spanCollector;
@@ -63,6 +65,7 @@ public class ChatService {
                        com.zhituagent.agent.ReflectionLoop reflectionLoop,
                        ChatTraceFactory chatTraceFactory,
                        ChatMetricsRecorder chatMetricsRecorder,
+                       MemoryMetricsRecorder memoryMetricsRecorder,
                        ToolMetricsRecorder toolMetricsRecorder,
                        TraceArchiveService traceArchiveService,
                        SpanCollector spanCollector,
@@ -76,6 +79,7 @@ public class ChatService {
         this.reflectionLoop = reflectionLoop;
         this.chatTraceFactory = chatTraceFactory;
         this.chatMetricsRecorder = chatMetricsRecorder;
+        this.memoryMetricsRecorder = memoryMetricsRecorder;
         this.toolMetricsRecorder = toolMetricsRecorder;
         this.traceArchiveService = traceArchiveService;
         this.spanCollector = spanCollector;
@@ -137,18 +141,20 @@ public class ChatService {
             logRouteDecision(requestId, sessionId, routeDecision);
 
             String contextSpan = spanCollector.startSpan("context.build", "context");
+            com.zhituagent.memory.MemorySnapshot snapshot = memoryService.snapshot(sessionId);
+            String evidenceBlock = buildEvidenceBlock(routeDecision);
             try {
-                contextBundle = contextManager.build(
-                        systemPrompt,
-                        memoryService.snapshot(sessionId),
-                        message,
-                        buildEvidenceBlock(routeDecision)
-                );
+                contextBundle = contextManager.build(systemPrompt, snapshot, message, evidenceBlock);
             } finally {
                 spanCollector.endSpan(contextSpan, "ok", Map.of(
                         "strategy", contextBundle == null ? "" : contextBundle.contextStrategy(),
                         "factCount", contextBundle == null || contextBundle.facts() == null ? 0 : contextBundle.facts().size()
                 ));
+            }
+            if (contextBundle != null) {
+                long rawTokens = contextManager.estimateRawTokens(systemPrompt, snapshot, message, evidenceBlock);
+                long budgetedTokens = contextManager.estimateMessages(contextBundle.modelMessages());
+                memoryMetricsRecorder.recordContextInputTokens(rawTokens, budgetedTokens, contextBundle.contextStrategy());
             }
 
             String llmSpan = spanCollector.startSpan("llm.generate", "llm");
