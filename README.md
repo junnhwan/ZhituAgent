@@ -1,4 +1,4 @@
-# 知识问答与告警分析 Agent
+# 知途Agent —— 知识问答与告警分析 Agent
 
 面向运维知识问答与告警分析场景的 Java AI Agent 项目。后端基于 **Spring Boot 3.5 + LangChain4j 1.1** 构建,使用 LangChain4j 作为模型接入层,但核心链路编排、RAG 检索、工具治理、上下文管理和多 Agent 调度都由项目自行实现。
 
