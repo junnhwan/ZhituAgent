@@ -20,34 +20,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-/**
- * Supervisor + specialist multi-agent orchestrator for the SRE alert-analysis
- * pipeline (v3). One supervisor LLM turn picks the next worker, the picked
- * worker runs through the existing {@link AgentLoop} (ReAct multi-turn,
- * scoped to its allowlist), then the supervisor decides again — up to
- * {@code maxRounds} routing turns.
- *
- * <p>Design choices:
- * <ul>
- *   <li><b>Selection B for retrieval:</b> the orchestrator pulls runbook
- *       snippets from {@link RagRetriever} once up front and feeds them as
- *       {@code EVIDENCE:} context into the {@code AlertTriageAgent}. The
- *       triage specialist itself has no tools, which keeps its trace clean
- *       and the supervisor's routing surface simple.</li>
- *   <li><b>FINISH only after report:</b> the supervisor system prompt
- *       instructs to choose FINISH only after {@code ReportAgent} has run.
- *       If the model still finishes early without a report, the orchestrator
- *       does NOT force one — that path is reserved for the {@code maxRounds}
- *       safety valve described next.</li>
- *   <li><b>maxRounds safety valve:</b> if the loop exits and at least one
- *       specialist ran but no {@code ReportAgent} was invoked, force a final
- *       {@code ReportAgent} turn so the response always carries a Markdown
- *       summary. {@code reachedMaxRounds} flags this in the result.</li>
- *   <li><b>JSON parse failures fall back, never retry:</b> retry burns tokens
- *       on format-nagging; fallback to {@code ReportAgent} is more reliable
- *       at the multi-agent layer.</li>
- * </ul>
- */
+// Supervisor + Specialist 多 Agent 编排器（告警分析场景）：
+// Supervisor LLM 每轮决定下一个 worker（AlertTriageAgent/LogQueryAgent/ReportAgent），
+// 被选中的 specialist 在 AgentLoop 中以隔离工具集运行 ReAct 循环，
+// 结果回传 Supervisor 继续路由，最多 maxRounds 轮。
+//
+// 设计要点：
+// 1. 处置手册检索前置：启动时从 RagRetriever 拉取 runbook 片段作为 AlertTriageAgent 的 EVIDENCE
+// 2. ReportAgent 是终态：supervisor prompt 要求先跑完 ReportAgent 才能 FINISH
+// 3. 安全阀：循环结束但没跑过 ReportAgent → 强制补一轮，确保响应总有 Markdown 报告
+// 4. JSON 解析失败直接 fallback 到 ReportAgent，不重试（省 token）
 @Component
 public class MultiAgentOrchestrator {
 

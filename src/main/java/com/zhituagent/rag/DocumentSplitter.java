@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+// 感知句子边界的文本切分器：优先在中英文标点处断句，保留 160 字符重叠窗口
+// 防止语义在 chunk 边界丢失；超长句子(>800字)回退为固定长度切分
 @Component
 public class DocumentSplitter {
 

@@ -81,6 +81,8 @@ public class ElasticsearchKnowledgeStore implements KnowledgeStore {
         int dim = embeddings.getFirst().dimension();
         ensureIndex(dim);
 
+        // _id=chunkId 实现幂等写入：相同 chunkId 重复 bulk 不会产生重复文档，
+        // 配合 Kafka at-least-once 投递语义达到 exactly-once-effect
         List<BulkOperation> ops = new ArrayList<>(chunks.size());
         for (int i = 0; i < chunks.size(); i++) {
             KnowledgeChunk chunk = chunks.get(i);
@@ -184,6 +186,10 @@ public class ElasticsearchKnowledgeStore implements KnowledgeStore {
         }
     }
 
+    // ES native hybrid：KNN 语义召回 + BM25 关键词匹配 + rescore 重排，
+    // 单次 ES 调用完成双路召回融合，避免应用层拼接两次查询的网络开销和分数校准问题。
+    // queryWeight=0.2 (KNN) + rescoreQueryWeight=1.0 (BM25) 的设计：
+    // 先用 KNN 粗筛候选集，再用 BM25 精排，语义通道权重较低以减少向量漂移误召回。
     @Override
     @SuppressWarnings({"unchecked", "rawtypes"})
     public List<KnowledgeSnippet> hybridSearch(String query, int limit) {

@@ -180,8 +180,11 @@ public class ContextManager {
 
         List<String> modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
 
-        // Tier 1: drop oldest recent messages, keep at least minKeepRecentMessages
-        // (Anthropic context engineering "preserve last N turns" pattern).
+        // 四级渐进裁剪：按"降级代价从低到高"排序，优先丢弃信息密度最低的内容。
+        // Tier 1: 丢弃最旧的对话轮次，保留最近 N 轮（默认 2）保证对话连贯性
+        // Tier 2: 丢弃最旧的用户事实，保留 ≥1 条
+        // Tier 3: 完全丢弃历史摘要
+        // Tier 4: 对 RAG 证据减半截断（最后一道防线）
         while (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens
                 && recentMessages.size() > minKeepRecentMessages) {
             recentMessages = new ArrayList<>(recentMessages.subList(1, recentMessages.size()));

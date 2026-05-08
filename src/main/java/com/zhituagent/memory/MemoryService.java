@@ -59,6 +59,8 @@ public class MemoryService {
         return memoryStore.list(sessionId);
     }
 
+    // 快照入口：读全量消息 → 提取稳定事实 → 加分布式锁做历史压缩 → 输出 MemorySnapshot
+    // 压缩加锁防并发（同一 session 多请求同时触发压缩时只有一个做压缩，其余走 recentOnly 降级）
     public MemorySnapshot snapshot(String sessionId) {
         List<ChatMessageRecord> messages = memoryStore.list(sessionId);
         List<String> facts = factExtractor.extract(messages);

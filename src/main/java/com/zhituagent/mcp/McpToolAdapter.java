@@ -28,13 +28,10 @@ public class McpToolAdapter implements ToolDefinition {
 
     private static final Logger log = LoggerFactory.getLogger(McpToolAdapter.class);
 
-    /**
-     * Separator between MCP server name and tool name in {@link #qualifiedName}.
-     * MUST match the {@code ^[a-zA-Z0-9_-]+$} pattern enforced by OpenAI-compat
-     * function-calling APIs (GLM, Anthropic, OpenAI). Single underscore would
-     * collide with MCP tool names that already contain underscores; dot is
-     * forbidden by the pattern.
-     */
+    // MCP → ToolDefinition 适配器：将 MCP 协议发现的外部工具桥接为内部 ToolDefinition，
+    // 使其流经 ToolRegistry → ToolCallExecutor（并行执行、Schema 校验、循环检测、HITL 审批）
+    // 和 LLM function-calling spec 导出，无需对 MCP 工具做特殊处理。
+    // 工具名用双下划线连接 serverName__toolName，兼容 OpenAI/GLM/Anthropic 的命名正则。
     static final String SERVER_TOOL_SEPARATOR = "__";
 
     private final McpClient client;

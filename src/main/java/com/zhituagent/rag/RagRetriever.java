@@ -105,6 +105,8 @@ public class RagRetriever {
                 ? Math.max(finalLimit, Math.max(1, rerankProperties.getRecallTopK()))
                 : finalLimit;
 
+        // 三条检索路径：native hybrid (ES 单次调用) > legacy hybrid (应用层双路+RRF) > dense-only
+        // 路径选择由 RetrievalMode + KnowledgeStore.supportsNativeHybrid() 共同决定
         boolean nativeHybrid = hybridEnabled && knowledgeIngestService.supportsNativeHybrid();
         List<RetrievalCandidate> candidates;
         if (nativeHybrid) {

@@ -24,23 +24,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Multi-turn ReAct loop. Replaces the single-shot "decide → execute → answer"
- * pipeline with a {@code while (!done && iter < maxIters)} cycle:
- * <pre>
- *   plan(LLM) ──► hasToolCalls ? execute → observe → loop
- *                              : finalAnswer
- * </pre>
- *
- * <p>Each iteration is a span ({@code agent.iter}) under the parent
- * {@code chat.turn} span; tool calls and observations get their own spans for
- * the trace tree. Loop detection is delegated to {@link ToolCallExecutor}'s
- * existing {@link LoopDetector}.
- *
- * <p>Conceptually a degenerate StateGraph with two nodes (LlmCall, CallTool)
- * and a self-loop. Kept as a single class to ship a thin v2 — when
- * Plan/Reflect/Self-RAG nodes land we'll graduate to a real graph.
- */
+// ReAct 多轮执行循环：LLM 思考 → 工具调用 → 结果观察 → 再思考，直到 LLM 输出最终回答或达到最大轮次。
+// 默认 maxIters=4，每轮有独立 span 用于 trace 树。
+// 三重安全机制：最大轮次限制 + LoopDetector 重复调用检测 + 步数耗尽时拼接部分观察作为兜底回答。
+// allowedToolNames 参数支持 multi-agent 场景下按 specialist 隔离可见工具集。
 @Component
 public class AgentLoop {
 

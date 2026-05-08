@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+// 规则化事实抽取：用中英文自述模式（"我叫/我是/my name is/i am"等）从用户消息中
+// 提取稳定事实，过滤掉疑问句和意图类表达（"想问/请问/帮我"等）。
+// 不依赖 LLM 调用，零延迟零成本，适合高频提取场景。最多保留 6 条事实。
 public class FactExtractor {
 
     private static final int MAX_FACTS = 6;

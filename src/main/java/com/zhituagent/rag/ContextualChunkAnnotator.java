@@ -50,12 +50,9 @@ public class ContextualChunkAnnotator {
         return ragProperties != null && ragProperties.isContextualEnabled();
     }
 
-    /**
-     * Returns the embed text to associate with this chunk. When contextual mode
-     * is on and the LLM produces a usable prefix, this is {@code prefix + "\n\n" + chunk};
-     * otherwise it returns the raw chunk so callers can pass the result straight
-     * through.
-     */
+    // Anthropic Contextual Retrieval 方案：在 chunk 向量化前，用 LLM 生成一句上下文前缀
+    // 拼接为 "<prefix>\n\n<chunk>" 再 embed，解决"孤立 chunk 语义模糊"问题。
+    // 仅影响 dense embedding 的输入，lexical search 和用户可见的 evidence 仍用原始 chunk。
     public String annotate(String fullDocument, String chunk) {
         if (chunk == null || chunk.isBlank()) {
             return chunk;

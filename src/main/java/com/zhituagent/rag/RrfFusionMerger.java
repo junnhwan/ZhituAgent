@@ -22,6 +22,9 @@ public class RrfFusionMerger {
     /** Standard RRF k. Larger k → flatter ranking influence; 60 is the canonical value. */
     private static final double K = 60.0;
 
+    // RRF 融合：只消费排名不消费原始分数，规避了 cosine∈[0,1] 与 BM25 count 之间的
+    // 量纲校准问题。score = Σ 1/(k+rank_i)，k=60 是论文推荐值，越大排名影响力越平坦。
+    // 每个候选同时保留 denseScore/lexicalScore 供下游 reranker 和 trace UI 使用。
     public List<RetrievalCandidate> merge(List<KnowledgeSnippet> denseSnippets,
                                           List<KnowledgeSnippet> lexicalSnippets,
                                           int limit) {

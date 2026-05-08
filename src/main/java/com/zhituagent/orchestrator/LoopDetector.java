@@ -5,14 +5,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Bounded LRU counter that flags repeated identical (toolName, argsHash) calls
- * as a loop. The orchestrator turns this into an observation fed back to the
- * LLM ("tool call loop detected, please change arguments or pick a different
- * tool"), preventing infinite retry death-spirals during ReAct loops.
- *
- * <p>Process-wide for now; will move to per-conversation scope when SG lands.
- */
+// 循环检测器：用 LRU 计数器追踪 (toolName, argsHash) 的调用次数，
+// 相同参数的工具调用 ≥3 次判定为循环，向 LLM 返回 "loop detected" 观察信号迫使其换策略。
+// argsHash 用 SHA-256 防碰撞，LRU 上限 256 key 自动淘汰旧条目。
 final class LoopDetector {
 
     private static final int MAX_KEYS = 256;

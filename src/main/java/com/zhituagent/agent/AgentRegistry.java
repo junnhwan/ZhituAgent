@@ -13,6 +13,8 @@ import java.util.Optional;
  * the supervisor to know which workers it can route to, and by the
  * orchestrator to look up an agent by the name returned in supervisor JSON.
  */
+// Specialist 注册表：每个 Agent 声明自己的名称、描述、系统提示和可见工具集（allowedToolNames），
+// Supervisor 通过 descriptionsForSupervisor() 获取所有 specialist 的摘要用于路由决策。
 @Component
 public class AgentRegistry {
 

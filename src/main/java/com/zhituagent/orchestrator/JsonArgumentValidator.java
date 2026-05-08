@@ -11,16 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Cheap structural validator for {@link JsonObjectSchema} — covers the subset
- * we actually use today (required properties, additionalProperties=false,
- * primitive type checks). Designed to give the LLM a precise observation when
- * its tool arguments fail validation, so it can self-correct on the next turn.
- *
- * <p>Not a full JSON Schema implementation — anyOf / oneOf / pattern / format
- * are out of scope. Pulling in everit-org/json-schema-validator was rejected
- * to keep the dep tree tight.
- */
+// LLM 工具调用参数的 JSON Schema 校验器：在 ToolCallExecutor 执行前拦截 schema 违规的参数，
+// 将校验错误作为 observation 反馈给 LLM，使其在下一轮自主修正参数。
+// 覆盖 required + additionalProperties + 基本类型检查，不引入外部 JSON Schema 库以保持依赖精简。
 final class JsonArgumentValidator {
 
     private JsonArgumentValidator() {
