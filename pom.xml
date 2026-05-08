@@ -206,12 +206,17 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-            <!-- mvn test: fast unit tests only; mvn verify: include @Tag("integration") -->
+            <!-- mvn test: fast unit tests only (excludes @Tag("integration"));
+                 mvn verify: include @Tag("integration") integration tests;
+                 mvn -Pbenchmark test: run *Benchmark.java micro benchmarks -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <excludedGroups>integration</excludedGroups>
+                    <excludes>
+                        <exclude>**/*Benchmark.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             <plugin>
@@ -235,4 +240,27 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- mvn -Pbenchmark test: run *Benchmark.java only (e.g. ContextManagerBenchmark).
+             Default surefire <includes> only matches *Test.java patterns, so benchmark files
+             are silently skipped by `mvn test`; this profile flips includes to *Benchmark.java. -->
+        <profile>
+            <id>benchmark</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <excludedGroups>integration</excludedGroups>
+                            <includes>
+                                <include>**/*Benchmark.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

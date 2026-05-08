@@ -1,6 +1,8 @@
 package com.zhituagent.context;
 
+import com.zhituagent.config.ContextProperties;
 import com.zhituagent.memory.MemorySnapshot;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -10,7 +12,7 @@ import java.util.List;
 @Component
 public class ContextManager {
 
-    private static final int DEFAULT_MAX_INPUT_TOKENS = 640;
+    private static final int DEFAULT_MAX_INPUT_TOKENS = 1024;
     private static final int DEFAULT_MAX_SUMMARY_TOKENS = 180;
     private static final int DEFAULT_MAX_FACTS_TOKENS = 120;
     private static final int DEFAULT_MAX_EVIDENCE_TOKENS = 240;
@@ -34,6 +36,18 @@ public class ContextManager {
                 DEFAULT_MAX_FACTS_TOKENS,
                 DEFAULT_MAX_EVIDENCE_TOKENS,
                 DEFAULT_MAX_MESSAGE_TOKENS
+        );
+    }
+
+    @Autowired
+    public ContextManager(ContextProperties contextProperties) {
+        this(
+                new TokenEstimator(),
+                contextProperties.getMaxInputTokens(),
+                contextProperties.getMaxSummaryTokens(),
+                contextProperties.getMaxFactsTokens(),
+                contextProperties.getMaxEvidenceTokens(),
+                contextProperties.getMaxMessageTokens()
         );
     }
 

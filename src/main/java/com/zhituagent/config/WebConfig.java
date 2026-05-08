@@ -28,7 +28,8 @@ import java.util.List;
         InfrastructureProperties.class,
         EvalProperties.class,
         TraceArchiveProperties.class,
-        McpProperties.class
+        McpProperties.class,
+        ContextProperties.class
 })
 public class WebConfig implements WebMvcConfigurer {
 
