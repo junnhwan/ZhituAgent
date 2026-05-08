@@ -12,6 +12,7 @@ public record RouteDecision(
         boolean toolUsed,
         String toolName,
         ToolResult toolResult,
+        String toolArguments,
         List<KnowledgeSnippet> snippets,
         String retrievalMode,
         int retrievalCandidateCount,
@@ -26,6 +27,7 @@ public record RouteDecision(
                 false,
                 null,
                 null,
+                null,
                 List.of(),
                 "none",
                 0,
@@ -34,13 +36,14 @@ public record RouteDecision(
         );
     }
 
-    public static RouteDecision tool(String toolName, ToolResult toolResult) {
+    public static RouteDecision tool(String toolName, ToolResult toolResult, String toolArguments) {
         return new RouteDecision(
                 "tool-then-answer",
                 false,
                 true,
                 toolName,
                 toolResult,
+                toolArguments,
                 List.of(),
                 "none",
                 0,
@@ -55,6 +58,7 @@ public record RouteDecision(
                 "retrieve-then-answer",
                 !safeSnippets.isEmpty(),
                 false,
+                null,
                 null,
                 null,
                 safeSnippets,
@@ -74,6 +78,7 @@ public record RouteDecision(
                 "retrieve-then-answer",
                 true,
                 false,
+                null,
                 null,
                 null,
                 retrievalResult.snippets(),

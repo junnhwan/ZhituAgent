@@ -8,6 +8,7 @@ import TracePanel from "./components/layout/TracePanel";
 import ChatPanel from "./components/chat/ChatPanel";
 import Composer from "./components/composer/Composer";
 import KnowledgeModal from "./components/knowledge/KnowledgeModal";
+import FileUploadModal from "./components/knowledge/FileUploadModal";
 import SettingsModal from "./components/knowledge/SettingsModal";
 import HitlConfirmPanel from "./components/hitl/HitlConfirmPanel";
 import SreDemoPanel from "./components/sre/SreDemoPanel";
@@ -27,6 +28,7 @@ export default function App() {
 
   const [trace, setTrace] = useState<TraceDisplay>(emptyTraceDisplay());
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
   const [view, setView] = useState<View>("chat");
@@ -100,6 +102,7 @@ export default function App() {
             onSelect={(i) => handleSelectSession(state.sessions[i].sessionId)}
             onOpenKnowledge={() => setKnowledgeOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenUpload={() => setUploadOpen(true)}
             view={view}
             onViewChat={() => setView("chat")}
             onViewSre={() => setView("sre")}
@@ -130,6 +133,7 @@ export default function App() {
         composer={view === "chat" ? <Composer sending={state.sending} onSend={handleSend} onAbort={abort} /> : null}
       />
       <KnowledgeModal open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
+      <FileUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} sessionId={state.activeSessionId} />
       <HitlConfirmPanel
         pending={pendingToolCall}

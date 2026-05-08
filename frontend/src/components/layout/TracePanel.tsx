@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import {
   Database, Wrench, Clock,
   Copy, Check, ChevronDown,
+  Brain, Layers, Zap,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import type { TraceDisplay } from "../../hooks/useStreamingChat";
@@ -97,6 +98,8 @@ export default function TracePanel({ trace }: { trace: TraceDisplay }) {
                 </div>
               </div>
 
+              <ContextSection trace={trace} />
+
               {trace.requestId && (
                 <div className="tp-request">
                   <span className="tp-request-label">Request</span>
@@ -168,6 +171,62 @@ function CopyTraceButton({ trace }: { trace: TraceDisplay }) {
       {copied ? <Check size={14} /> : <Copy size={14} />}
       {copied ? "已复制" : "复制 Trace"}
     </button>
+  );
+}
+
+const MAX_INPUT_TOKENS = 1024;
+
+function parseContextStrategy(strategy: string): string[] {
+  if (!strategy) return ["未知策略"];
+  const parts: string[] = [];
+  if (strategy.includes("recent-summary")) parts.push("最近消息 + 摘要");
+  if (strategy.includes("facts")) parts.push("用户事实");
+  if (strategy.includes("budgeted")) parts.push("已裁剪");
+  if (strategy.includes("overflow")) parts.push("超预算");
+  return parts.length > 0 ? parts : ["基础策略"];
+}
+
+function ContextSection({ trace }: { trace: TraceDisplay }) {
+  const strategyParts = parseContextStrategy(trace.contextStrategy);
+  const tokenUsage = trace.inputTokenEstimate / MAX_INPUT_TOKENS;
+  const tokenPercent = Math.min(100, Math.round(tokenUsage * 100));
+  const isOverBudget = trace.contextStrategy?.includes("overflow");
+
+  return (
+    <div className="tp-group">
+      <div className="tp-group-label">
+        <Brain size={12} />
+        上下文管理
+      </div>
+      <div className="tp-context">
+        <div className="tp-context-strategy">
+          <Layers size={12} />
+          <span>策略: {strategyParts.join(" + ")}</span>
+        </div>
+        <div className="tp-context-tokens">
+          <div className="tp-token-header">
+            <Zap size={12} />
+            <span>Token 使用</span>
+            <span className="tp-token-count">
+              {trace.inputTokenEstimate} / {MAX_INPUT_TOKENS}
+            </span>
+          </div>
+          <div className="tp-token-bar-track">
+            <motion.div
+              className={`tp-token-bar-fill ${isOverBudget ? "over-budget" : ""}`}
+              initial={{ width: 0 }}
+              animate={{ width: `${tokenPercent}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
+          </div>
+          {trace.factCount > 0 && (
+            <div className="tp-facts-count">
+              用户事实: {trace.factCount} 条
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

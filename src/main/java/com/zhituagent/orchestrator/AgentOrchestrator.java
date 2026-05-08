@@ -166,7 +166,8 @@ public class AgentOrchestrator {
 
         ToolResult aggregate = aggregate(executions);
         String firstName = executions.get(0).result().toolName();
-        return RouteDecision.tool(firstName, aggregate);
+        String firstArgs = executions.get(0).request().arguments();
+        return RouteDecision.tool(firstName, aggregate, firstArgs);
     }
 
     private RagRetrievalResult retrieveWithOptionalSelfRag(String userMessage, RetrievalRequestOptions retrievalOptions) {

@@ -26,6 +26,7 @@ const emptyTrace: Omit<TraceDisplay, "status"> = {
   inputTokenEstimate: 0,
   outputTokenEstimate: 0,
   retrievedSources: [],
+  retrievedSnippets: [],
   traceId: "",
   spans: [],
 };
@@ -142,7 +143,7 @@ export function useStreamingChat(
             cancelAnimationFrame(rafRef.current);
             dispatch({
               type: "FINALIZE_STREAMING_MESSAGE",
-              payload: { sessionId, content: pendingContent.current },
+              payload: { sessionId, content: pendingContent.current, trace },
             });
             dispatch({ type: "SET_SENDING", payload: false });
             onTraceChange({ ...trace, status: "complete" });

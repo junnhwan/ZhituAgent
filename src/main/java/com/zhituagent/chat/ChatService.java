@@ -175,7 +175,8 @@ public class ChatService {
                             firstSuccess = loopResult.executions().get(0).result();
                         }
                         if (firstSuccess != null) {
-                            routeDecision = RouteDecision.tool(firstSuccess.toolName(), firstSuccess);
+                            String firstArgs = loopResult.executions().get(0).request().arguments();
+                            routeDecision = RouteDecision.tool(firstSuccess.toolName(), firstSuccess, firstArgs);
                             recordToolMetric(routeDecision);
                         }
                     }

@@ -1,0 +1,333 @@
+.fum-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fum-card {
+  width: 480px;
+  max-width: 90vw;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+
+.fum-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.fum-header h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--t1);
+  margin: 0;
+}
+
+.fum-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--t3);
+  transition: color 0.15s;
+}
+
+.fum-close:hover {
+  color: var(--t1);
+}
+
+.fum-body {
+  padding: 24px;
+}
+
+/* Dropzone */
+.fum-dropzone {
+  border: 2px dashed rgba(0,0,0,0.15);
+  border-radius: 12px;
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.fum-dropzone:hover,
+.fum-dropzone.active {
+  border-color: var(--azure);
+  background: rgba(14,165,233,0.04);
+}
+
+.fum-dropzone.has-file {
+  border-color: var(--green);
+  background: rgba(34,197,94,0.04);
+}
+
+.fum-file-input {
+  display: none;
+}
+
+.fum-upload-icon {
+  color: var(--t3);
+  margin-bottom: 12px;
+}
+
+.fum-file-icon {
+  color: var(--green);
+  margin-bottom: 12px;
+}
+
+.fum-drop-text {
+  font-size: var(--fs-md);
+  color: var(--t2);
+  margin-bottom: 8px;
+}
+
+.fum-supported {
+  font-size: var(--fs-xs);
+  color: var(--t4);
+}
+
+.fum-file-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--t1);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.fum-file-size {
+  font-size: var(--fs-xs);
+  color: var(--t3);
+}
+
+/* Progress */
+.fum-progress-area {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.fum-file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0,0,0,0.03);
+  border-radius: 8px;
+}
+
+.fum-file-info .fum-file-name {
+  font-size: var(--fs-sm);
+  margin: 0;
+}
+
+.fum-progress-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: center;
+}
+
+.fum-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+}
+
+.fum-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.06);
+  color: var(--t3);
+  transition: all 0.2s;
+}
+
+.fum-step.active .fum-step-dot {
+  background: var(--azure-glow);
+  color: var(--azure);
+}
+
+.fum-step.done .fum-step-dot {
+  background: rgba(34,197,94,0.15);
+  color: var(--green);
+}
+
+.fum-step-dot-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fum-step-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--t3);
+}
+
+.fum-step.active .fum-step-label {
+  color: var(--azure);
+}
+
+.fum-step.done .fum-step-label {
+  color: var(--green);
+}
+
+.fum-step-percent {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--azure);
+  font-weight: 600;
+}
+
+.fum-step-status {
+  font-size: 10px;
+  color: var(--t4);
+  font-style: italic;
+}
+
+.fum-step-connector {
+  flex: 1;
+  height: 2px;
+  background: rgba(0,0,0,0.06);
+  margin-top: 14px;
+  min-width: 40px;
+}
+
+@keyframes fum-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.fum-spin {
+  animation: fum-spin 1s linear infinite;
+}
+
+/* Success */
+.fum-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+.fum-success-icon {
+  color: var(--green);
+}
+
+.fum-success-text {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--t1);
+}
+
+.fum-success-file {
+  font-size: var(--fs-sm);
+  color: var(--t3);
+}
+
+/* Error state */
+.fum-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+.fum-error-icon {
+  color: var(--red);
+}
+
+.fum-error-text {
+  font-size: var(--fs-md);
+  color: var(--t2);
+  text-align: center;
+}
+
+/* Inline error */
+.fum-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(220,38,38,0.06);
+  border: 1px solid rgba(220,38,38,0.2);
+  border-radius: 8px;
+  font-size: var(--fs-xs);
+  color: #b91c1c;
+}
+
+/* Footer */
+.fum-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+.fum-progress-hint {
+  font-size: var(--fs-sm);
+  color: var(--t2);
+}
+
+.fum-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: var(--sans);
+  transition: all 0.15s;
+}
+
+.fum-btn.primary {
+  background: var(--g-azure-solid);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(14,165,233,0.3);
+}
+
+.fum-btn.primary:hover {
+  box-shadow: 0 4px 12px rgba(14,165,233,0.4);
+}
+
+.fum-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fum-btn.secondary {
+  background: rgba(0,0,0,0.05);
+  color: var(--t2);
+}
+
+.fum-btn.secondary:hover {
+  background: rgba(0,0,0,0.08);
+}

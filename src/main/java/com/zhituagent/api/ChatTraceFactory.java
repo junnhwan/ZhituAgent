@@ -1,5 +1,6 @@
 package com.zhituagent.api;
 
+import com.zhituagent.api.dto.SnippetInfo;
 import com.zhituagent.api.dto.TraceInfo;
 import com.zhituagent.context.ContextBundle;
 import com.zhituagent.context.TokenEstimator;
@@ -49,6 +50,15 @@ public class ChatTraceFactory {
         List<String> retrievedSources = snippets.stream()
                 .map(KnowledgeSnippet::source)
                 .toList();
+        List<SnippetInfo> retrievedSnippets = snippets.stream()
+                .map(s -> new SnippetInfo(
+                        s.source(),
+                        truncateContent(s.content(), 300),
+                        s.score(),
+                        s.denseScore(),
+                        s.rerankScore()
+                ))
+                .toList();
 
         String traceId = spanCollector.currentTraceId();
         List<Span> spans = spanCollector.drain();
@@ -73,6 +83,7 @@ public class ChatTraceFactory {
                 inputTokenEstimate,
                 outputTokenEstimate,
                 retrievedSources,
+                retrievedSnippets,
                 traceId == null ? "" : traceId,
                 spans
         );
@@ -83,5 +94,10 @@ public class ChatTraceFactory {
             return DEFAULT_RETRIEVAL_MODE;
         }
         return routeDecision.retrievalMode();
+    }
+
+    private static String truncateContent(String content, int maxLen) {
+        if (content == null) return "";
+        return content.length() > maxLen ? content.substring(0, maxLen) + "..." : content;
     }
 }

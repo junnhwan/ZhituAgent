@@ -44,6 +44,14 @@ export interface Span {
   attributes: Record<string, unknown>;
 }
 
+export interface SnippetInfo {
+  source: string;
+  content: string;
+  score: number;
+  denseScore: number;
+  rerankScore: number;
+}
+
 export interface TraceInfo {
   path: string;
   retrievalHit: boolean;
@@ -62,6 +70,7 @@ export interface TraceInfo {
   inputTokenEstimate: number;
   outputTokenEstimate: number;
   retrievedSources: string[];
+  retrievedSnippets: SnippetInfo[];
   traceId: string;
   spans: Span[];
 }

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MessageSquarePlus, Settings, Layers, Activity, MessageCircle } from "lucide-react";
+import { MessageSquarePlus, Settings, Layers, Activity, MessageCircle, Upload } from "lucide-react";
 import type { SessionState } from "../../hooks/types";
 import "./Sidebar.css";
 
@@ -27,6 +27,7 @@ export default function Sidebar({
   onSelect,
   onOpenKnowledge,
   onOpenSettings,
+  onOpenUpload,
   view,
   onViewChat,
   onViewSre,
@@ -37,6 +38,7 @@ export default function Sidebar({
   onSelect: (i: number) => void;
   onOpenKnowledge: () => void;
   onOpenSettings: () => void;
+  onOpenUpload: () => void;
   view: "chat" | "sre";
   onViewChat: () => void;
   onViewSre: () => void;
@@ -125,6 +127,17 @@ export default function Sidebar({
         whileTap={{ scale: 0.92 }}
       >
         <Layers size={20} />
+      </motion.button>
+
+      <motion.button
+        type="button"
+        className="nav-icon-btn ghost"
+        onClick={onOpenUpload}
+        title="上传文件"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.92 }}
+      >
+        <Upload size={20} />
       </motion.button>
 
       <motion.button

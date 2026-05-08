@@ -54,4 +54,6 @@ export interface MessageState {
   error?: StreamingError;
   /** Tool invocations bound to this message (rendered inline as ToolCallCards). */
   toolCalls?: ToolCallState[];
+  /** Trace info for this message (used to display retrieval snippets). */
+  trace?: import("../types/api").TraceInfo;
 }

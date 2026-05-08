@@ -22,12 +22,14 @@ public record TraceInfo(
         long inputTokenEstimate,
         long outputTokenEstimate,
         List<String> retrievedSources,
+        List<SnippetInfo> retrievedSnippets,
         String traceId,
         List<Span> spans
 ) {
 
     public TraceInfo {
         retrievedSources = retrievedSources == null ? List.of() : List.copyOf(retrievedSources);
+        retrievedSnippets = retrievedSnippets == null ? List.of() : List.copyOf(retrievedSnippets);
         traceId = traceId == null ? "" : traceId;
         spans = spans == null ? List.of() : List.copyOf(spans);
     }

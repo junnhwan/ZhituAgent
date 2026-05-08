@@ -12,6 +12,7 @@ frontend/node_modules/
 .claude
 guide
 cv/
+cv.md
 
 # Local-only: Claude Code session transcripts and personal resume drafts
 archive/sessions/
@@ -40,3 +41,4 @@ infra/cloud/prometheus-web.yml
 # before `mvn package`, so the bundle is reproduced on every deploy.
 src/main/resources/static/
 docs/2026-05-05-deploy-cheatsheet.md
+docs/demo-guide.md

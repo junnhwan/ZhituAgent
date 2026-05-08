@@ -122,6 +122,7 @@ export function streamChat(
                 inputTokenEstimate: payload.inputTokenEstimate ?? 0,
                 outputTokenEstimate: payload.outputTokenEstimate ?? 0,
                 retrievedSources: payload.retrievedSources ?? [],
+                retrievedSnippets: payload.retrievedSnippets ?? [],
                 traceId: payload.traceId ?? "",
                 spans: payload.spans ?? [],
               } satisfies TraceInfo);

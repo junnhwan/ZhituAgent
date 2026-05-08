@@ -14,7 +14,7 @@ export type AppAction =
   | { type: "ADD_MESSAGE"; payload: { sessionId: string; message: MessageState } }
   | { type: "UPDATE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string } }
   | { type: "UPDATE_STREAMING_PHASE"; payload: { sessionId: string; phase: StreamingPhase; toolName?: string } }
-  | { type: "FINALIZE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string } }
+  | { type: "FINALIZE_STREAMING_MESSAGE"; payload: { sessionId: string; content: string; trace?: import("../types/api").TraceInfo } }
   | { type: "MARK_STREAMING_ERROR"; payload: { sessionId: string; error: StreamingError } }
   | { type: "ADD_TOOL_CALL"; payload: { sessionId: string; toolCall: ToolCallState } }
   | { type: "UPDATE_TOOL_CALL"; payload: { sessionId: string; toolCallId: string; patch: Partial<ToolCallState> } }
@@ -75,7 +75,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const msgs = [...s.messages];
         const last = msgs[msgs.length - 1];
         if (last?.isStreaming) {
-          msgs[msgs.length - 1] = { ...last, content: action.payload.content, isStreaming: false, phase: undefined };
+          msgs[msgs.length - 1] = {
+            ...last,
+            content: action.payload.content,
+            isStreaming: false,
+            phase: undefined,
+            trace: action.payload.trace,
+          };
         }
         return { ...s, messages: msgs };
       });

@@ -1,8 +1,10 @@
-import { motion } from "framer-motion";
-import { Bot, User, AlertCircle, RotateCcw } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Bot, User, AlertCircle, RotateCcw, BookOpen, ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MessageState, StreamingPhase } from "../../hooks/types";
+import type { SnippetInfo } from "../../types/api";
 import StreamingCursor from "./StreamingCursor";
 import ToolCallCard from "./ToolCallCard";
 import "./ChatMessage.css";
@@ -47,6 +49,8 @@ export default function ChatMessage({
   const isUser = msg.role === "user";
   const isError = !isUser && !!msg.error;
   const showPlaceholder = !isUser && msg.isStreaming && !msg.content;
+  const snippets = msg.trace?.retrievedSnippets ?? [];
+  const hasSnippets = snippets.length > 0;
 
   return (
     <motion.div
@@ -99,8 +103,50 @@ export default function ChatMessage({
           )}
           {msg.isStreaming && msg.content && <StreamingCursor />}
         </div>
+
+        {!isUser && hasSnippets && <SnippetSources snippets={snippets} />}
+
         <span className="cm-role">{isUser ? "你" : "Agent"}</span>
       </div>
     </motion.div>
+  );
+}
+
+function SnippetSources({ snippets }: { snippets: SnippetInfo[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="cm-snippets">
+      <button
+        type="button"
+        className="cm-snippets-toggle"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <BookOpen size={12} />
+        <span>引用来源 ({snippets.length})</span>
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      </button>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            className="cm-snippets-list"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {snippets.map((s, i) => (
+              <div key={i} className="cm-snippet">
+                <div className="cm-snippet-header">
+                  <span className="cm-snippet-source">{s.source}</span>
+                  <span className="cm-snippet-score">score: {s.score.toFixed(3)}</span>
+                </div>
+                <div className="cm-snippet-content">{s.content}</div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

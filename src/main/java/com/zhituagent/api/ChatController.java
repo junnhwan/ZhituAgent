@@ -390,9 +390,20 @@ public class ChatController {
         if (!mcpTransport.isEmpty()) {
             startPayload.put("transport", mcpTransport);
         }
-        // Raw args aren't surfaced through RouteDecision today; surface an empty
-        // map so the frontend's "args" section can render a placeholder.
-        startPayload.put("args", Map.of());
+        // Surface the raw tool arguments from the LLM's tool call request.
+        String rawArgs = routeDecision.toolArguments();
+        Map<String, Object> argsMap = Map.of();
+        if (rawArgs != null && !rawArgs.isBlank()) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> parsed = objectMapper.readValue(rawArgs, Map.class);
+                argsMap = parsed;
+            } catch (Exception ignored) {
+                // If parsing fails, surface as a single "raw" key.
+                argsMap = Map.of("raw", rawArgs);
+            }
+        }
+        startPayload.put("args", argsMap);
 
         try {
             emitter.send(SseEmitter.event()
@@ -408,7 +419,7 @@ public class ChatController {
         // Synthetic 0ms — single-pass pipeline doesn't track per-tool timing yet.
         endPayload.put("durationMs", 0L);
         String summary = result == null ? "" : (result.summary() == null ? "" : result.summary());
-        endPayload.put("resultPreview", summary.length() > 200 ? summary.substring(0, 200) + "..." : summary);
+        endPayload.put("resultPreview", summary.length() > 500 ? summary.substring(0, 500) + "..." : summary);
 
         try {
             emitter.send(SseEmitter.event()

@@ -217,3 +217,62 @@
 .cm-retry:active {
   transform: translateY(0);
 }
+
+/* Snippet sources */
+.cm-snippets {
+  margin-top: 8px;
+  position: relative;
+  z-index: 1;
+}
+.cm-snippets-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgba(0,0,0,0.1);
+  background: rgba(255,255,255,0.6);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  color: var(--t2);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cm-snippets-toggle:hover {
+  background: rgba(255,255,255,0.85);
+  color: var(--t1);
+}
+.cm-snippets-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+.cm-snippet {
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.03);
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.cm-snippet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.cm-snippet-source {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--azure, #0ea5e9);
+}
+.cm-snippet-score {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+}
+.cm-snippet-content {
+  font-size: var(--fs-xs);
+  color: var(--t2);
+  line-height: 1.5;
+  word-break: break-word;
+}
