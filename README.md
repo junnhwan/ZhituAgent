@@ -82,6 +82,33 @@ graph TB
     Kafka --> ES
 ```
 
+
+
+## 快速启动
+
+```bash
+# 启动中间件
+cd infra/local && docker compose up -d
+
+# 启动后端
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+
+# 启动前端
+cd frontend && npm install && npm run dev
+```
+
+详见 [快速启动指南](docs/quick-start.md)
+
+## 文档
+
+- [快速启动](docs/quick-start.md) - 环境配置、启动命令、部署指南
+- [API 参考](docs/api-reference.md) - 接口文档、请求/响应格式
+- [架构设计](docs/architecture.md) - 系统架构、核心流程、数据流
+- [功能详解](docs/features.md) - 核心功能、技术实现
+- [演示指南](docs/demo-guide.md) - 演示场景、测试提示词
+
+
+
 ## 演示
 
 ### 对话首页
@@ -135,29 +162,6 @@ graph TB
 ```
 
 ![HITL](./README.assets/HITL.png)
-
-## 快速启动
-
-```bash
-# 启动中间件
-cd infra/local && docker compose up -d
-
-# 启动后端
-mvn spring-boot:run -Dspring-boot.run.profiles=local
-
-# 启动前端
-cd frontend && npm install && npm run dev
-```
-
-详见 [快速启动指南](docs/quick-start.md)
-
-## 文档
-
-- [快速启动](docs/quick-start.md) - 环境配置、启动命令、部署指南
-- [API 参考](docs/api-reference.md) - 接口文档、请求/响应格式
-- [架构设计](docs/architecture.md) - 系统架构、核心流程、数据流
-- [功能详解](docs/features.md) - 核心功能、技术实现
-- [演示指南](docs/demo-guide.md) - 演示场景、测试提示词
 
 ## License
 
