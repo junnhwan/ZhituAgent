@@ -123,17 +123,17 @@ sequenceDiagram
     participant User as 用户
     participant Chat as ChatController
     participant Orch as AgentOrchestrator
-    participant Loop as AgentLoop
+    participant ReAct as AgentLoop
     participant Exec as ToolCallExecutor
     participant Tool as 工具
     participant LLM as LLM
 
     User->>Chat: 发送消息
     Chat->>Orch: decide(message)
-    Orch->>Loop: run(message)
-    Loop->>LLM: generate(message, tools)
-    LLM-->>Loop: tool_call
-    Loop->>Exec: execute(tool_call)
+    Orch->>ReAct: run(message)
+    ReAct->>LLM: generate(message, tools)
+    LLM-->>ReAct: tool_call
+    ReAct->>Exec: execute(tool_call)
     
     alt 需要审批
         Exec->>Chat: pending_approval
@@ -144,10 +144,10 @@ sequenceDiagram
     
     Exec->>Tool: execute(args)
     Tool-->>Exec: result
-    Exec-->>Loop: observation
-    Loop->>LLM: generate(message, observation)
-    LLM-->>Loop: answer
-    Loop-->>Chat: answer
+    Exec-->>ReAct: observation
+    ReAct->>LLM: generate(message, observation)
+    LLM-->>ReAct: answer
+    ReAct-->>Chat: answer
     Chat-->>User: 响应
 ```
 

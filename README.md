@@ -24,7 +24,14 @@
 - **工具治理**：JSON Schema 校验、并行执行、HITL 审批、MCP 扩展
 - **Agent 循环**：ReAct 多轮执行、环检测、嵌套 span trace
 - **SRE 编排**：Supervisor 路由 + AlertTriageAgent + LogQueryAgent + ReportAgent
-- **异步入库**：Kafka KRaft 事务 producer + at-least-once consumer + DLT
+
+## 其他能力
+
+- **异步文件入库**：Kafka KRaft 事务 producer + at-least-once consumer + DLT，HTTP 上传立即返回 202
+- **Self-RAG / Reflection**：检索质量判断、问题改写、回答自检
+- **评测体系**：BaselineEvalRunner、RankingMetrics、C-MTEB fixture loader
+- **可观测性**：Micrometer + Prometheus 指标、结构化日志、TraceArchive、嵌套 span tree
+- **前端控制台**：React + TypeScript，聊天、SSE 流式、Trace 面板、HITL 审批、SRE Demo
 
 ## 架构概览
 
@@ -77,9 +84,21 @@ graph TB
 
 ## 演示
 
+### 对话首页
+
+![index](./README.assets/index.png)
+
+![trace-panel](./README.assets/trace-panel.png)
+
 ### 文件上传
 
 点击侧边栏上传按钮，支持 PDF/Word/Excel/TXT/Markdown
+
+![upload1](./README.assets/upload1.png)
+
+![upload2](./README.assets/upload2.png)
+
+![upload3](./README.assets/upload3.png)
 
 ### RAG 检索
 
@@ -87,21 +106,35 @@ graph TB
 从知识库找 ES hybrid 检索的实现要点
 ```
 
+![rag1](./README.assets/rag1.png)
+
+![rag2](./README.assets/rag2.png)
+
 ### 工具调用
 
 ```
 查一下当前时间
 ```
 
+![toolcall](./README.assets/toolcall.png)
+
 ### SRE 告警分析
 
 点击侧边栏 SRE Demo，选择告警卡片
+
+![bianpai1](./README.assets/bianpai1.png)
+
+![bianpai2](./README.assets/bianpai2.png)
+
+![bianpai3](./README.assets/bianpai3.png)
 
 ### HITL 审批
 
 ```
 帮我记住这个知识：Q: 什么是 RAG？A: 检索增强生成
 ```
+
+![HITL](./README.assets/HITL.png)
 
 ## 快速启动
 

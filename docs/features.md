@@ -62,7 +62,9 @@ SRE 告警分析流程：
   - `ReportAgent`：生成 Markdown 报告
 - **安全阀**：超时自动触发报告生成
 
-### 6. 异步文件入库
+## 其他能力
+
+### 异步文件入库
 
 Kafka KRaft 异步管线：
 
@@ -70,8 +72,7 @@ Kafka KRaft 异步管线：
 - **Consumer**：at-least-once + DLT
 - **幂等写入**：ES `_id=chunkId` 吸收重投递
 - **状态流转**：QUEUED → PARSING → INDEXED
-
-## 其他能力
+- **HTTP 202**：上传立即返回，异步处理
 
 ### Self-RAG / Reflection
 
