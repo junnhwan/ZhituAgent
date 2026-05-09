@@ -140,34 +140,33 @@ public class AgentOrchestrator {
         RagRetrievalResult retrievalResult = skipRag
                 ? new RagRetrievalResult(List.of(), "skipped-by-intent", 0, "", 0.0)
                 : retrieveWithOptionalSelfRag(userMessage, retrievalOptions);
+
+        // Always try tool calling first, even if RAG has results
+        List<ToolSpecification> specs = toolRegistry.specifications();
+        if (!specs.isEmpty()) {
+            ChatTurnResult turn = llmRuntime.generateWithTools(
+                    systemPrompt,
+                    List.of("USER: " + userMessage),
+                    specs,
+                    Map.of("phase", "tool-selection")
+            );
+            if (turn.hasToolCalls()) {
+                List<ToolCallExecutor.ToolExecution> executions = toolCallExecutor.executeAll(turn.toolCalls(), safeMetadata);
+                if (!executions.isEmpty()) {
+                    ToolResult aggregate = aggregate(executions);
+                    String firstName = executions.get(0).result().toolName();
+                    String firstArgs = executions.get(0).request().arguments();
+                    return RouteDecision.tool(firstName, aggregate, firstArgs);
+                }
+            }
+        }
+
+        // Fall back to RAG if no tool calls
         if (!retrievalResult.snippets().isEmpty()) {
             return RouteDecision.retrieval(retrievalResult);
         }
 
-        List<ToolSpecification> specs = toolRegistry.specifications();
-        if (specs.isEmpty()) {
-            return RouteDecision.direct();
-        }
-
-        ChatTurnResult turn = llmRuntime.generateWithTools(
-                systemPrompt,
-                List.of("USER: " + userMessage),
-                specs,
-                Map.of("phase", "tool-selection")
-        );
-        if (!turn.hasToolCalls()) {
-            return RouteDecision.direct();
-        }
-
-        List<ToolCallExecutor.ToolExecution> executions = toolCallExecutor.executeAll(turn.toolCalls(), safeMetadata);
-        if (executions.isEmpty()) {
-            return RouteDecision.direct();
-        }
-
-        ToolResult aggregate = aggregate(executions);
-        String firstName = executions.get(0).result().toolName();
-        String firstArgs = executions.get(0).request().arguments();
-        return RouteDecision.tool(firstName, aggregate, firstArgs);
+        return RouteDecision.direct();
     }
 
     private RagRetrievalResult retrieveWithOptionalSelfRag(String userMessage, RetrievalRequestOptions retrievalOptions) {
