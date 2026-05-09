@@ -1,73 +1,76 @@
-# 协作约束
+# AGENTS.md
 
-这个文件用于记录当前仓库的开发约束、协作规则和已经确认的边界。**当前进度状态见 `docs/optimize-progress.md`,session 入口见 `CLAUDE.md`,本文件只放长期不变的约束**。
+本文件只放当前仓库长期有效的 agent 开发规则。当前项目快照见 `docs/agent-handoff.md`；历史工程流水见 `docs/archive/optimize-progress.md`，不要再把它当作当前进度文件维护。
 
-## 项目方向
+## Context Files
 
-- 构建 `ZhituAgent` 的 Java 版本
-- 项目形态采用单模块 Spring Boot
-- 使用 LangChain4j 作为大模型接入层
-- 主链路编排尽量自己掌控,不把核心 Agent 逻辑完全托管给高层框架
+- `README.md`：对外展示口径、截图和功能总览。
+- `docs/agent-handoff.md`：当前项目快照、代码地图、验证记录和交接细节。
+- `docs/quick-start.md`、`docs/architecture.md`、`docs/features.md`、`docs/api-reference.md`、`docs/demo-guide.md`：开发、架构、功能、API 和演示文档。
+- `docs/guide/`：专题学习材料。
+- `docs/archive/`：历史 plan 和一次性记录，只读参考。
 
-## 架构约束
+## Project Direction
 
-- 单模块,不提前拆多模块
-- 会话记忆:Redis
-- RAG:Elasticsearch 8.10 + IK 中文分词器(M1 已退役 pgvector)— dense+sparse 都进 ES,hybrid 单次 KNN+match+rescore
-- 文件入库:MinIO + Tika + HanLP(M2 同步)→ Kafka KRaft 异步 pipeline(M3 完成,producer 事务 + consumer at-least-once + DLT)
-- 阶段 2 已完成(混合检索、可观测性、评估体系、ReAct、Contextual Retrieval、Self-RAG、HITL、MCP);阶段 3 v3 ES 栈现代化 M1+M2+M3 已完成,M4(测试治理 + 文档刷新)进行中
+- 构建 `ZhituAgent` 的 Java 版本，面向 SRE/DevOps 知识问答、工具调用和告警分析。
+- 保持单模块 Spring Boot，不提前拆多模块或引入额外服务编排层。
+- 使用 LangChain4j 作为大模型接入层，但核心 Agent 编排、工具治理、上下文预算和 RAG 决策由项目代码掌控。
+- 默认要能本地运行并回退到 in-memory 实现；真实 Redis、Elasticsearch、MinIO、Kafka 通过环境变量显式启用。
 
-## 交付约束
+## Architecture Rules
 
-- 优先采用"少量阶段、少量 commit"的推进方式,不要拆成过多碎小提交
-- 后续阶段统一使用 `Task 1` / `Task 2` / `Task 3` / `Task 4` 描述阶段
-- 规划、设计、计划文档统一放在 `docs/`,已实施的 plan 沉到 `docs/archive/`
-- 必须维护 `docs/optimize-progress.md`,作为当前开发进度的实时记录(原 `progress.md` 已删除,被这个文件替代)
+- 会话与记忆：Redis 可选；默认必须能回退到 in-memory store。
+- RAG：Elasticsearch 8.10 + IK 中文分词是当前主路径；pgvector 已退役，不要新增 pgvector 依赖。
+- 文件入库：MinIO + Tika + HanLP；Kafka KRaft 异步管线通过 `ZHITU_KAFKA_ENABLED=true` 显式开启，关闭时保留同步入库路径。
+- Kafka 语义：producer 使用事务与幂等；consumer 按 at-least-once 处理；ES `_id=chunkId` 吸收重复投递，形成 exactly-once-effect。
+- MCP、LLM router、reflection、多 Agent SRE 编排都应保持可配置开关，避免默认本地单测依赖外部服务。
 
-## 基础设施约束
+## Build And Test
 
-- 当前阶段不要把 Docker 作为日常验证前提,除非用户明确要求
-- 用户后面会自行测试基础设施
-- 当前代码设计要支持先用本地兜底实现,后续再平滑替换到 Redis / pgvector
+```powershell
+# 后端单测，默认不依赖 Docker
+.\mvnw.cmd -o test
 
-## 密钥与配置约束
+# 单测 + integration tests；需要 Docker/Testcontainers 环境
+.\mvnw.cmd -o verify
 
-- 绝对不要把 provider 密钥硬编码进会提交的源码或配置
-- 本地敏感信息只放 `.env`
-- `.env` 必须保持在 `.gitignore` 中
-- 应用配置应通过环境变量读取地址、模型名和 API key
+# 后端本地启动
+.\mvnw.cmd -o spring-boot:run -Dspring-boot.run.profiles=local
 
-## 沟通约束
+# 前端构建
+cd frontend
+npm run build
+```
 
-- 必须清楚区分:已完成、部分完成、未完成
-- 如果测试失败是因为后续阶段的失败测试先写了,要明确说明原因
-- 汇报进度时尽量绑定到具体文件和具体行为,而不是只说"差不多完成了"
+- 当前日常验证不要把 Docker 作为前提，除非用户明确要求跑真实中间件或 IT。
+- 前端产物输出到 `src/main/resources/static/`，该目录已被 gitignore。
+- 真 LLM / ES / Redis / MinIO / Kafka 相关验证要说明是否依赖外部服务和密钥；没有实际运行就不要写成已验证。
 
-## 当前本地模型入口
+## Change Discipline
 
-- 对话模型走 OpenAI 兼容接口:`https://wzw.pp.ua/v1`
-- Embedding 接口:`https://router.tumuer.me/v1/embeddings`
-- Rerank 接口:`https://router.tumuer.me/v1/rerank`
-- 实际 key 只保存在 `.env`
+- 先查当前源码和文档，再改入口文件；不要用旧记忆覆盖仓库事实。
+- 优先采用少量阶段、少量 milestone commit 的推进方式，不拆过多碎小提交。
+- 后续阶段描述统一使用 `Task 1` / `Task 2` / `Task 3` / `Task 4`。
+- 规划、设计、计划文档放在 `docs/`；已实施或过期的 plan 放到 `docs/archive/`。
+- 根目录入口文档应短而稳定；共享细节放 `docs/agent-handoff.md` 或专题文档。
+- 汇报进度必须绑定具体文件、行为和验证命令；不要只说“差不多完成了”。
 
-## 如果后续还有别的 Agent 接手
+## Security And Config
 
-- **必读入口**:
-  - `CLAUDE.md` — session 速查卡
-  - `docs/optimize-progress.md` — 完整工程史(C-1..C-3 / A-1..A-7 / SG / CR-1 / SR / T1+T2 / HL.a+HL.b / MCP / UI)
-- **设计文档**(`docs/`):
-  - `2026-04-27-zhitu-agent-java-design.md`
-  - `2026-04-27-zhitu-agent-java-api.md`
-  - `2026-04-28-zhitu-agent-java-observability.md`
-  - `2026-04-28-zhitu-agent-java-report-template.md`
-- **历史 plan**(`docs/archive/`,只读参考):
-  - `2026-04-27-zhitu-agent-java-plan.md`
-  - `2026-04-27-zhitu-agent-java-implementation-plan.md`
-  - `2026-04-28-zhitu-agent-java-phase-two-plan.md`
-  - `2026-04-28-zhitu-agent-java-optimization-plan.md`
-- **当前状态**(详见 `docs/optimize-progress.md`):
-  - 阶段 1 / 阶段 2 全部完成,真实 LLM 链路 + Redis + ES 全部联调通过
-  - 阶段 3 v3 ES 栈现代化 M1+M2+M3 完成:pgvector→ES+IK、MinIO+Tika 同步入库、Kafka KRaft 异步 pipeline
-  - 单元测试 217/217 全绿(`mvn test`),IT 通过 `mvn verify` + Docker 跑(目前本地无 docker 自动跳过 4 个 Kafka IT)
-  - 真 LLM v1/v2 baseline 双 split 满分;v3 baseline 在云端 ES 上跑通 smoke
-  - 详细进度看 user-level memory `project_v3_es_stack.md`
+- 绝对不要把 provider key、数据库密码、ES 密码、Prometheus basic-auth 等敏感信息写进会提交的源码或文档。
+- 本地敏感信息只放 `.env` 或未跟踪的部署配置；`.env` 必须保持在 `.gitignore` 中。
+- 应用配置应通过环境变量读取地址、模型名和 API key。
+- 如果需要说明模型入口，只写变量名和配置位置，不在提交文档里固化真实 key 或私有 endpoint。
+
+## Windows Notes
+
+- 默认工作目录是 `D:\dev\my_proj\java\zhitu-agent-java`。
+- 不要把项目脚本、临时产物或交接文档写到 `C:\` 的随机目录；除非用户明确要求，所有项目产物应留在当前仓库内。
+- PowerShell 环境下优先使用 `.\mvnw.cmd`、`Get-ChildItem`、`Select-String` 等稳定命令；`rg` 可用时可以优先用，失败时直接回退 PowerShell 原生命令。
+
+## Communication
+
+- 必须清楚区分：已完成、部分完成、未完成、未验证。
+- 如果测试失败是因为外部基础设施、Docker、密钥或后续阶段测试先写了，要明确说明原因。
+- 当用户问“理解对不对”或“写得是不是过大”时，先查源码和当前文档，再校准说法，不要泛泛给建议。
+- 对简历、项目叙事和面试材料，优先保证真实性、可追问性和边界清楚。
