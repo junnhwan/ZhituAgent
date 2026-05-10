@@ -3,11 +3,14 @@ package com.zhituagent.config;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhituagent.memory.InMemoryMemoryStore;
+import com.zhituagent.memory.InMemorySummaryStore;
+import com.zhituagent.memory.SummaryStore;
 import com.zhituagent.memory.MemoryStore;
 import com.zhituagent.memory.MemoryLock;
 import com.zhituagent.memory.NoopMemoryLock;
 import com.zhituagent.memory.RedisMemoryStore;
 import com.zhituagent.memory.RedisMemoryLock;
+import com.zhituagent.memory.RedisSummaryStore;
 import com.zhituagent.rag.ElasticsearchKnowledgeStore;
 import com.zhituagent.rag.InMemoryKnowledgeStore;
 import com.zhituagent.rag.KnowledgeStore;
@@ -60,6 +63,18 @@ public class InfrastructureConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "zhitu.infrastructure", name = "redis-enabled", havingValue = "true")
+    SummaryStore redisSummaryStore(StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper) {
+        return new RedisSummaryStore(stringRedisTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(SummaryStore.class)
+    SummaryStore inMemorySummaryStore() {
+        return new InMemorySummaryStore();
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "zhitu.infrastructure", name = "redis-enabled", havingValue = "true")
     MemoryLock redisMemoryLock(StringRedisTemplate stringRedisTemplate) {
         return new RedisMemoryLock(stringRedisTemplate);
     }
@@ -104,11 +119,13 @@ public class InfrastructureConfig {
         KnowledgeStore ks = ctx.getBean(KnowledgeStore.class);
         SessionRepository sr = ctx.getBean(SessionRepository.class);
         MemoryStore ms = ctx.getBean(MemoryStore.class);
+        SummaryStore ss = ctx.getBean(SummaryStore.class);
         log.info(
-                "ZhituAgent active stores: KnowledgeStore={} (nativeHybrid={}), SessionRepository={}, MemoryStore={}",
+                "ZhituAgent active stores: KnowledgeStore={} (nativeHybrid={}), SessionRepository={}, MemoryStore={}, SummaryStore={}",
                 ks.getClass().getSimpleName(),
                 ks instanceof ElasticsearchKnowledgeStore,
                 sr.getClass().getSimpleName(),
-                ms.getClass().getSimpleName());
+                ms.getClass().getSimpleName(),
+                ss.getClass().getSimpleName());
     }
 }

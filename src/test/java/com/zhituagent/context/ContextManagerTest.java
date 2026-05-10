@@ -2,7 +2,9 @@ package com.zhituagent.context;
 
 import com.zhituagent.memory.ChatMessageRecord;
 import com.zhituagent.memory.MemoryService;
+import com.zhituagent.memory.MemorySnapshot;
 import com.zhituagent.memory.MessageSummaryCompressor;
+import com.zhituagent.memory.SummarySource;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
@@ -142,6 +144,82 @@ class ContextManagerTest {
         assertThat(bundle.contextStrategy()).endsWith("-overflow");
         assertThat(bundle.recentMessages()).hasSizeGreaterThanOrEqualTo(2);
     }
+
+    @Test
+    void shouldTrimRecentMessageContentBeforeStampingOverflow() {
+        ContextManager contextManager = new ContextManager(360, 20, 20, 20, 80, 2);
+
+        ContextBundle bundle = contextManager.build(
+                "系统提示 ".repeat(40),
+                new com.zhituagent.memory.MemorySnapshot(
+                        "旧摘要会被丢弃",
+                        List.of(
+                                message("user", "第一条旧消息会先被移除。"),
+                                message("assistant", "第二条旧消息也会先被移除。"),
+                                message("user", "这是一条必须保留但可以继续压缩内容的最近用户消息。".repeat(8)),
+                                message("assistant", "这是一条必须保留但可以继续压缩内容的最近助手消息。".repeat(8))
+                        ),
+                        List.of("我在杭州做 Java Agent 后端开发")
+                ),
+                "当前问题 ".repeat(30),
+                ""
+        );
+
+        assertThat(bundle.contextStrategy()).isEqualTo("recent-summary-facts-budgeted");
+        assertThat(bundle.recentMessages()).hasSize(2);
+        assertThat(bundle.recentMessages()).extracting(ChatMessageRecord::content)
+                .allMatch(content -> content.endsWith("..."));
+        assertThat(new TokenEstimator().estimateMessages(bundle.modelMessages())).isLessThanOrEqualTo(360);
+    }
+
+    @Test
+    void shouldPreserveMarkdownSummaryAndStampLlmSummaryStrategy() {
+        ContextManager contextManager = new ContextManager();
+        String markdownSummary = """
+                ### 用户稳定背景
+                - 用户在补强会话记忆
+
+                ### 已确认目标
+                - 使用 mini 模型做增量摘要
+
+                ### 已做决策
+                - 默认关闭，显式启用
+
+                ### 重要上下文
+                - 摘要格式必须可读
+
+                ### 待跟进问题
+                - 暂无
+                """;
+
+        ContextBundle bundle = contextManager.build(
+                "你是测试助手",
+                new MemorySnapshot(markdownSummary, List.of(), List.of(), SummarySource.LLM),
+                "继续讨论实现",
+                ""
+        );
+
+        assertThat(bundle.summary()).contains("### 用户稳定背景");
+        assertThat(bundle.modelMessages())
+                .anyMatch(message -> message.startsWith("SUMMARY: ### 用户稳定背景")
+                        && message.contains("### 已确认目标"));
+        assertThat(bundle.contextStrategy()).isEqualTo("recent-summary-llm-summary");
+    }
+
+    @Test
+    void shouldStampRuleSummaryStrategyWhenFallbackSummaryIsUsed() {
+        ContextManager contextManager = new ContextManager();
+
+        ContextBundle bundle = contextManager.build(
+                "你是测试助手",
+                new MemorySnapshot("### 用户稳定背景\n- 暂无", List.of(), List.of(), SummarySource.RULE),
+                "继续讨论实现",
+                ""
+        );
+
+        assertThat(bundle.contextStrategy()).isEqualTo("recent-summary-rule-summary");
+    }
+
     private ChatMessageRecord message(String role, String content) {
         return new ChatMessageRecord(role, content, OffsetDateTime.now());
     }

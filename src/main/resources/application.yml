@@ -76,6 +76,15 @@ zhitu:
     elasticsearch-enabled: ${ZHITU_ES_ENABLED:false}
     minio-enabled: ${ZHITU_MINIO_ENABLED:false}
     kafka-enabled: ${ZHITU_KAFKA_ENABLED:false}
+  memory:
+    summary:
+      enabled: ${ZHITU_MEMORY_SUMMARY_ENABLED:false}
+      trigger-message-count: ${ZHITU_MEMORY_SUMMARY_TRIGGER_MESSAGE_COUNT:6}
+      max-recent-messages: ${ZHITU_MEMORY_SUMMARY_MAX_RECENT_MESSAGES:4}
+      timeout-millis: ${ZHITU_MEMORY_SUMMARY_TIMEOUT_MILLIS:1500}
+      max-output-chars: ${ZHITU_MEMORY_SUMMARY_MAX_OUTPUT_CHARS:1200}
+      fallback-on-failure: ${ZHITU_MEMORY_SUMMARY_FALLBACK_ON_FAILURE:true}
+      model-purpose: ${ZHITU_MEMORY_SUMMARY_MODEL_PURPOSE:memory-summary}
   trace-archive:
     enabled: ${ZHITU_TRACE_ARCHIVE_ENABLED:true}
     dir: ${ZHITU_TRACE_ARCHIVE_DIR:logs/trace}

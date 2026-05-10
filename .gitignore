@@ -13,6 +13,7 @@ frontend/node_modules/
 guide
 cv/
 cv.md
+docs/ds-torture
 
 # Local-only: Claude Code session transcripts and personal resume drafts
 archive/sessions/

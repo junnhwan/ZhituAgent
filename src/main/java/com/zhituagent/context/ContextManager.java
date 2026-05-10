@@ -2,6 +2,7 @@ package com.zhituagent.context;
 
 import com.zhituagent.config.ContextProperties;
 import com.zhituagent.memory.MemorySnapshot;
+import com.zhituagent.memory.SummarySource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,8 @@ public class ContextManager {
     private static final int DEFAULT_MAX_MESSAGE_TOKENS = 120;
     private static final int DEFAULT_MIN_KEEP_RECENT_MESSAGES = 2;
     private static final String BASE_STRATEGY = "recent-summary";
+    private static final String LLM_SUMMARY_SUFFIX = "-llm-summary";
+    private static final String RULE_SUMMARY_SUFFIX = "-rule-summary";
     private static final String FACTS_SUFFIX = "-facts";
     private static final String BUDGETED_SUFFIX = "-budgeted";
     private static final String OVERFLOW_SUFFIX = "-overflow";
@@ -213,6 +216,19 @@ public class ContextManager {
             modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
         }
 
+        // Tier 5: keep the minimum recent-message count, but shrink their
+        // content further so the floor remains conversational without forcing
+        // an overflow stamp on otherwise recoverable cases.
+        int recentTokenLimit = Math.max(12, maxMessageTokens / 2);
+        while (tokenEstimator.estimateMessages(modelMessages) > maxInputTokens
+                && recentTokenLimit >= 12
+                && canShrinkRecentMessages(recentMessages, recentTokenLimit)) {
+            recentMessages = shrinkRecentMessages(recentMessages, recentTokenLimit);
+            budgeted = true;
+            modelMessages = buildModelMessages(systemPrompt, summary, facts, recentMessages, evidence, currentMessage);
+            recentTokenLimit = recentTokenLimit / 2;
+        }
+
         // After all four tiers: stamp -overflow if still over budget so the floor
         // is observable (e.g. system prompt + minKeepRecent + 1 fact + halved
         // evidence + current msg already exceeds maxInputTokens).
@@ -223,7 +239,7 @@ public class ContextManager {
                 List.copyOf(recentMessages),
                 List.copyOf(facts),
                 evidence,
-                resolveContextStrategy(facts, budgeted, overflow)
+                resolveContextStrategy(memorySnapshot.summarySource(), facts, budgeted, overflow)
         );
     }
 
@@ -292,6 +308,30 @@ public class ContextManager {
         return List.copyOf(limited);
     }
 
+    private boolean canShrinkRecentMessages(List<com.zhituagent.memory.ChatMessageRecord> recentMessages, int tokenLimit) {
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return false;
+        }
+        return recentMessages.stream()
+                .anyMatch(message -> tokenEstimator.estimateText(message.content()) > tokenLimit);
+    }
+
+    private List<com.zhituagent.memory.ChatMessageRecord> shrinkRecentMessages(List<com.zhituagent.memory.ChatMessageRecord> recentMessages,
+                                                                               int tokenLimit) {
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return List.of();
+        }
+        List<com.zhituagent.memory.ChatMessageRecord> limited = new ArrayList<>();
+        for (com.zhituagent.memory.ChatMessageRecord message : recentMessages) {
+            limited.add(new com.zhituagent.memory.ChatMessageRecord(
+                    message.role(),
+                    trimToTokenLimit(message.content(), tokenLimit),
+                    message.timestamp()
+            ));
+        }
+        return List.copyOf(limited);
+    }
+
     private String trimToTokenLimit(String text, int tokenLimit) {
         if (text == null || text.isBlank() || tokenLimit <= 0) {
             return "";
@@ -321,8 +361,13 @@ public class ContextManager {
         return best;
     }
 
-    private String resolveContextStrategy(List<String> facts, boolean budgeted, boolean overflow) {
+    private String resolveContextStrategy(SummarySource summarySource, List<String> facts, boolean budgeted, boolean overflow) {
         String strategy = BASE_STRATEGY;
+        if (summarySource == SummarySource.LLM) {
+            strategy += LLM_SUMMARY_SUFFIX;
+        } else if (summarySource == SummarySource.RULE) {
+            strategy += RULE_SUMMARY_SUFFIX;
+        }
         if (facts != null && !facts.isEmpty()) {
             strategy += FACTS_SUFFIX;
         }

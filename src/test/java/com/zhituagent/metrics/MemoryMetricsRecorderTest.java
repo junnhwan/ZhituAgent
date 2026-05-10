@@ -92,4 +92,37 @@ class MemoryMetricsRecorderTest {
         assertThat(skip).isNotNull();
         assertThat(skip.count()).isEqualTo(1.0);
     }
+
+    @Test
+    void shouldRecordSummaryMetricsByOutcomeModelLatencyAndTokens() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        MemoryMetricsRecorder recorder = new MemoryMetricsRecorder(registry);
+
+        recorder.recordSummary("success", "gpt-5.4-mini", 123, 456, 78);
+
+        Counter total = registry.find("zhitu_memory_summary_total")
+                .tag("outcome", "success")
+                .tag("model", "gpt-5.4-mini")
+                .counter();
+        DistributionSummary latency = registry.find("zhitu_memory_summary_latency_ms")
+                .tag("model", "gpt-5.4-mini")
+                .summary();
+        DistributionSummary inputTokens = registry.find("zhitu_memory_summary_tokens")
+                .tag("phase", "input")
+                .tag("model", "gpt-5.4-mini")
+                .summary();
+        DistributionSummary outputTokens = registry.find("zhitu_memory_summary_tokens")
+                .tag("phase", "output")
+                .tag("model", "gpt-5.4-mini")
+                .summary();
+
+        assertThat(total).isNotNull();
+        assertThat(total.count()).isEqualTo(1.0);
+        assertThat(latency).isNotNull();
+        assertThat(latency.totalAmount()).isEqualTo(123.0);
+        assertThat(inputTokens).isNotNull();
+        assertThat(inputTokens.totalAmount()).isEqualTo(456.0);
+        assertThat(outputTokens).isNotNull();
+        assertThat(outputTokens.totalAmount()).isEqualTo(78.0);
+    }
 }
