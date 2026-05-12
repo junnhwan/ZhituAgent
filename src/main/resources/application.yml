@@ -85,6 +85,10 @@ zhitu:
       max-output-chars: ${ZHITU_MEMORY_SUMMARY_MAX_OUTPUT_CHARS:1200}
       fallback-on-failure: ${ZHITU_MEMORY_SUMMARY_FALLBACK_ON_FAILURE:true}
       model-purpose: ${ZHITU_MEMORY_SUMMARY_MODEL_PURPOSE:memory-summary}
+  jwt:
+    secret: ${ZHITU_JWT_SECRET:default-secret-change-me-in-production-32chars!!}
+    expiration-ms: ${ZHITU_JWT_EXPIRATION:86400000}
+    issuer: zhitu-agent
   trace-archive:
     enabled: ${ZHITU_TRACE_ARCHIVE_ENABLED:true}
     dir: ${ZHITU_TRACE_ARCHIVE_DIR:logs/trace}
