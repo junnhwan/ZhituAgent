@@ -1,6 +1,10 @@
 zhitu:
   llm:
     mock-mode: true
+  jwt:
+    secret: test-secret-key-that-is-long-enough-for-jwt-hmac-sha256
+    expiration-ms: 3600000
+    issuer: zhitu-test
 
 management:
   health:
