@@ -1,4 +1,8 @@
 import { useReducer, useState, useCallback, useEffect, useRef } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { LoginPage } from "./components/auth/LoginPage";
+import { RegisterPage } from "./components/auth/RegisterPage";
 import MeshGradient, { MeshGradientStyles } from "./components/background/MeshGradient";
 import NoiseOverlay, { NoiseOverlayStyles } from "./components/background/NoiseOverlay";
 import AppShell from "./components/layout/AppShell";
@@ -19,7 +23,15 @@ import { approveToolCall, denyToolCall } from "./api/tools";
 
 type View = "chat" | "sre";
 
-export default function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
+function MainApp() {
   const [state, dispatch] = useReducer(appReducer, {
     sessions: [] as import("./hooks/types").SessionState[],
     activeSessionId: null as string | null,
@@ -141,5 +153,26 @@ export default function App() {
         onDeny={handleDeny}
       />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <MainApp />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
