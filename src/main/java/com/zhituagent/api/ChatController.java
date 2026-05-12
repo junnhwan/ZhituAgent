@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -92,10 +93,11 @@ public class ChatController {
 
     @PostMapping(path = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
     public ChatResponse chat(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest) {
+        String userId = SecurityContextHolder.getContext().getAuthentication().getName();
         String requestId = requestIdOf(servletRequest);
         return chatService.chat(
                 request.sessionId(),
-                request.userId(),
+                userId,
                 request.message(),
                 requestId,
                 request.metadata()
@@ -104,10 +106,11 @@ public class ChatController {
 
     @PostMapping(path = "/streamChat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest) {
+        String userId = SecurityContextHolder.getContext().getAuthentication().getName();
         long startNanos = System.nanoTime();
         String requestId = requestIdOf(servletRequest);
-        sessionService.ensureSession(request.sessionId(), request.userId());
-        sessionService.appendMessage(request.sessionId(), request.userId(), "user", request.message());
+        sessionService.ensureSession(request.sessionId(), userId);
+        sessionService.appendMessage(request.sessionId(), userId, "user", request.message());
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
@@ -163,7 +166,7 @@ public class ChatController {
                         },
                         () -> {
                             try {
-                                sessionService.appendMessage(request.sessionId(), request.userId(), "assistant", answerBuilder.toString());
+                                sessionService.appendMessage(request.sessionId(), userId, "assistant", answerBuilder.toString());
                                 long latencyMs = elapsedMillis(startNanos);
                                 TraceInfo traceInfo = chatTraceFactory.create(
                                         finalRoute,
@@ -176,7 +179,7 @@ public class ChatController {
                                         "chat.stream.completed",
                                         true,
                                         request.sessionId(),
-                                        request.userId(),
+                                        userId,
                                         requestId,
                                         request.message(),
                                         answerBuilder.toString(),
@@ -220,7 +223,7 @@ public class ChatController {
                         "chat.stream.failed",
                         true,
                         request.sessionId(),
-                        request.userId(),
+                        userId,
                         requestId,
                         request.message(),
                         answerBuilder.toString(),

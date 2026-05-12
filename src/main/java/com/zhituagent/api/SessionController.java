@@ -5,6 +5,7 @@ import com.zhituagent.api.dto.SessionDetailResponse;
 import com.zhituagent.api.dto.SessionResponse;
 import com.zhituagent.session.SessionService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +25,8 @@ public class SessionController {
 
     @PostMapping
     public SessionResponse createSession(@Valid @RequestBody SessionCreateRequest request) {
-        return sessionService.createSession(request.userId(), request.title());
+        String userId = SecurityContextHolder.getContext().getAuthentication().getName();
+        return sessionService.createSession(userId, request.title());
     }
 
     @GetMapping("/{sessionId}")
