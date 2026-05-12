@@ -1,0 +1,25 @@
+package com.zhituagent.auth;
+
+import java.util.UUID;
+
+public class User {
+    private String id;
+    private String tenantId;
+    private String email;
+    private String passwordHash;
+    private long createdAt;
+
+    public User(String tenantId, String email, String passwordHash) {
+        this.id = UUID.randomUUID().toString();
+        this.tenantId = tenantId;
+        this.email = email;
+        this.passwordHash = passwordHash;
+        this.createdAt = System.currentTimeMillis();
+    }
+
+    public String getId() { return id; }
+    public String getTenantId() { return tenantId; }
+    public String getEmail() { return email; }
+    public String getPasswordHash() { return passwordHash; }
+    public long getCreatedAt() { return createdAt; }
+}
