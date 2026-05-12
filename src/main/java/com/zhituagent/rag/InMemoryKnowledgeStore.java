@@ -61,6 +61,53 @@ public class InMemoryKnowledgeStore implements KnowledgeStore {
                 .toList();
     }
 
+    @Override
+    public synchronized List<KnowledgeSnippet> searchByTenant(String query, String tenantId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+
+        String normalizedQuery = LexicalScoringUtils.normalize(query);
+        List<KnowledgeSnippet> ranked = new ArrayList<>();
+        for (KnowledgeChunk chunk : chunksById.values()) {
+            if (tenantId != null && !tenantId.equals(chunk.tenantId())) {
+                continue;
+            }
+            double score = score(normalizedQuery, LexicalScoringUtils.normalize(chunk.content()));
+            if (score > 0) {
+                ranked.add(new KnowledgeSnippet(chunk.source(), chunk.chunkId(), score, chunk.content()));
+            }
+        }
+
+        return ranked.stream()
+                .sorted(Comparator.comparingDouble(KnowledgeSnippet::score).reversed())
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
+    @Override
+    public synchronized List<KnowledgeSnippet> lexicalSearchByTenant(String query, String tenantId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+
+        List<KnowledgeSnippet> ranked = new ArrayList<>();
+        for (KnowledgeChunk chunk : chunksById.values()) {
+            if (tenantId != null && !tenantId.equals(chunk.tenantId())) {
+                continue;
+            }
+            double score = LexicalScoringUtils.scoreText(query, chunk.content());
+            if (score > 0) {
+                ranked.add(new KnowledgeSnippet(chunk.source(), chunk.chunkId(), score, chunk.content()));
+            }
+        }
+
+        return ranked.stream()
+                .sorted(Comparator.comparingDouble(KnowledgeSnippet::score).reversed())
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
     public synchronized int size() {
         return chunksById.size();
     }

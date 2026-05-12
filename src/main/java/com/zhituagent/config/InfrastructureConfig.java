@@ -15,6 +15,7 @@ import com.zhituagent.rag.ElasticsearchKnowledgeStore;
 import com.zhituagent.rag.InMemoryKnowledgeStore;
 import com.zhituagent.rag.KnowledgeStore;
 import com.zhituagent.rag.OpenAiCompatibleRerankClient;
+import com.zhituagent.rag.TenantAwareKnowledgeStore;
 import com.zhituagent.rag.RerankClient;
 import com.zhituagent.session.InMemorySessionRepository;
 import com.zhituagent.session.RedisSessionRepository;
@@ -88,17 +89,15 @@ public class InfrastructureConfig {
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "zhitu.infrastructure", name = "elasticsearch-enabled", havingValue = "true")
-    KnowledgeStore elasticsearchKnowledgeStore(ElasticsearchClient esClient,
-                                               EsProperties esProperties,
-                                               EmbeddingProperties embeddingProperties) {
-        return new ElasticsearchKnowledgeStore(esClient, esProperties, embeddingProperties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(KnowledgeStore.class)
-    KnowledgeStore inMemoryKnowledgeStore() {
-        return new InMemoryKnowledgeStore();
+    KnowledgeStore knowledgeStore(
+            ObjectProvider<ElasticsearchClient> esClientProvider,
+            EsProperties esProperties,
+            EmbeddingProperties embeddingProperties,
+            @org.springframework.beans.factory.annotation.Value("${zhitu.infrastructure.elasticsearch-enabled:false}") boolean esEnabled) {
+        KnowledgeStore delegate = (esEnabled && esClientProvider.getIfAvailable() != null)
+                ? new ElasticsearchKnowledgeStore(esClientProvider.getObject(), esProperties, embeddingProperties)
+                : new InMemoryKnowledgeStore();
+        return new TenantAwareKnowledgeStore(delegate);
     }
 
     @Bean
@@ -125,10 +124,14 @@ public class InfrastructureConfig {
         String sessionRepoDelegate = (sr instanceof TenantAwareSessionRepository tasr)
                 ? tasr.delegate().getClass().getSimpleName()
                 : sr.getClass().getSimpleName();
+        String knowledgeStoreDelegate = (ks instanceof TenantAwareKnowledgeStore taks)
+                ? taks.delegate().getClass().getSimpleName()
+                : ks.getClass().getSimpleName();
         log.info(
-                "ZhituAgent active stores: KnowledgeStore={} (nativeHybrid={}), SessionRepository={} (delegate={}), MemoryStore={}, SummaryStore={}",
+                "ZhituAgent active stores: KnowledgeStore={} (delegate={}, nativeHybrid={}), SessionRepository={} (delegate={}), MemoryStore={}, SummaryStore={}",
                 ks.getClass().getSimpleName(),
-                ks instanceof ElasticsearchKnowledgeStore,
+                knowledgeStoreDelegate,
+                ks.supportsNativeHybrid(),
                 sr.getClass().getSimpleName(),
                 sessionRepoDelegate,
                 ms.getClass().getSimpleName(),

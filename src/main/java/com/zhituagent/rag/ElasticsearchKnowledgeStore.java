@@ -92,6 +92,9 @@ public class ElasticsearchKnowledgeStore implements KnowledgeStore {
             doc.put("content", chunk.content());
             doc.put("embedText", chunk.effectiveEmbedText());
             doc.put("embedding", embeddings.get(i).vector());
+            if (chunk.tenantId() != null) {
+                doc.put("tenantId", chunk.tenantId());
+            }
 
             ops.add(BulkOperation.of(b -> b.index(idx -> idx
                     .index(esProperties.getIndexName())
@@ -186,6 +189,65 @@ public class ElasticsearchKnowledgeStore implements KnowledgeStore {
         }
     }
 
+    // --- Tenant-scoped search variants ---
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public List<KnowledgeSnippet> searchByTenant(String query, String tenantId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+
+        Embedding queryEmb = getEmbeddingModel().embed(query).content();
+        List<Float> queryVec = toFloatList(queryEmb.vector());
+        int finalLimit = Math.max(1, limit);
+        int recall = Math.max(finalLimit * 10, 100);
+
+        try {
+            SearchResponse<Map> resp = esClient.search(s -> s
+                    .index(esProperties.getIndexName())
+                    .knn(k -> k
+                            .field("embedding")
+                            .queryVector(queryVec)
+                            .k(finalLimit)
+                            .numCandidates(recall)
+                            .filter(f -> f.term(t -> t.field("tenantId").value(tenantId))))
+                    .source(src -> src.filter(f -> f.excludes("embedding")))
+                    .size(finalLimit), Map.class);
+
+            return resp.hits().hits().stream()
+                    .map(this::hitToSnippet)
+                    .toList();
+        } catch (IOException e) {
+            throw new IllegalStateException("ES KNN search by tenant failed", e);
+        }
+    }
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public List<KnowledgeSnippet> lexicalSearchByTenant(String query, String tenantId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        int finalLimit = Math.max(1, limit);
+
+        try {
+            SearchResponse<Map> resp = esClient.search(s -> s
+                    .index(esProperties.getIndexName())
+                    .query(q -> q.bool(b -> b
+                            .must(m -> m.match(mt -> mt.field("content").query(query)))
+                            .filter(f -> f.term(t -> t.field("tenantId").value(tenantId)))))
+                    .source(src -> src.filter(f -> f.excludes("embedding")))
+                    .size(finalLimit), Map.class);
+
+            return resp.hits().hits().stream()
+                    .map(this::hitToSnippet)
+                    .toList();
+        } catch (IOException e) {
+            throw new IllegalStateException("ES lexical search by tenant failed", e);
+        }
+    }
+
     // ES native hybrid：KNN 语义召回 + BM25 关键词匹配 + rescore 重排，
     // 单次 ES 调用完成双路召回融合，避免应用层拼接两次查询的网络开销和分数校准问题。
     // queryWeight=0.2 (KNN) + rescoreQueryWeight=1.0 (BM25) 的设计：
@@ -228,6 +290,50 @@ public class ElasticsearchKnowledgeStore implements KnowledgeStore {
                     .toList();
         } catch (IOException e) {
             throw new IllegalStateException("ES hybrid search failed", e);
+        }
+    }
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public List<KnowledgeSnippet> hybridSearchByTenant(String query, String tenantId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+
+        Embedding queryEmb = getEmbeddingModel().embed(query).content();
+        List<Float> queryVec = toFloatList(queryEmb.vector());
+        int finalLimit = Math.max(1, limit);
+        int recall = Math.max(finalLimit * 10, 100);
+
+        try {
+            SearchResponse<Map> resp = esClient.search(s -> s
+                    .index(esProperties.getIndexName())
+                    .knn(k -> k
+                            .field("embedding")
+                            .queryVector(queryVec)
+                            .k(recall)
+                            .numCandidates(recall)
+                            .filter(f -> f.term(t -> t.field("tenantId").value(tenantId))))
+                    .query(q -> q.bool(b -> b
+                            .must(m -> m.match(mt -> mt.field("content").query(query)))
+                            .filter(f -> f.term(t -> t.field("tenantId").value(tenantId)))))
+                    .rescore(r -> r
+                            .windowSize(recall)
+                            .query(rq -> rq
+                                    .queryWeight(0.2d)
+                                    .rescoreQueryWeight(1.0d)
+                                    .query(rqq -> rqq.match(m -> m
+                                            .field("content")
+                                            .query(query)
+                                            .operator(Operator.And)))))
+                    .source(src -> src.filter(f -> f.excludes("embedding")))
+                    .size(finalLimit), Map.class);
+
+            return resp.hits().hits().stream()
+                    .map(this::hitToSnippet)
+                    .toList();
+        } catch (IOException e) {
+            throw new IllegalStateException("ES hybrid search by tenant failed", e);
         }
     }
 

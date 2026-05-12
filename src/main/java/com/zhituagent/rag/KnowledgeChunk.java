@@ -14,11 +14,16 @@ public record KnowledgeChunk(
         String source,
         String chunkId,
         String content,
-        String embedText
+        String embedText,
+        String tenantId
 ) {
 
     public KnowledgeChunk(String source, String chunkId, String content) {
-        this(source, chunkId, content, null);
+        this(source, chunkId, content, null, null);
+    }
+
+    public KnowledgeChunk(String source, String chunkId, String content, String embedText) {
+        this(source, chunkId, content, embedText, null);
     }
 
     public String effectiveEmbedText() {

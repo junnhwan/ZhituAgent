@@ -30,4 +30,18 @@ public interface KnowledgeStore {
     default boolean supportsNativeHybrid() {
         return false;
     }
+
+    // --- Tenant-scoped variants (used by TenantAwareKnowledgeStore decorator) ---
+
+    default List<KnowledgeSnippet> searchByTenant(String query, String tenantId, int limit) {
+        return search(query, limit);
+    }
+
+    default List<KnowledgeSnippet> lexicalSearchByTenant(String query, String tenantId, int limit) {
+        return lexicalSearch(query, limit);
+    }
+
+    default List<KnowledgeSnippet> hybridSearchByTenant(String query, String tenantId, int limit) {
+        return hybridSearch(query, limit);
+    }
 }

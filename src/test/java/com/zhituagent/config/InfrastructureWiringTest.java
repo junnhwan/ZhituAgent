@@ -4,6 +4,7 @@ import com.zhituagent.ZhituAgentApplication;
 import com.zhituagent.memory.MemoryStore;
 import com.zhituagent.memory.SummaryStore;
 import com.zhituagent.rag.KnowledgeStore;
+import com.zhituagent.rag.TenantAwareKnowledgeStore;
 import com.zhituagent.session.SessionRepository;
 import com.zhituagent.session.TenantAwareSessionRepository;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,8 @@ class InfrastructureWiringTest {
                 .isEqualTo("InMemorySessionRepository");
         assertThat(memoryStore.getClass().getSimpleName()).isEqualTo("InMemoryMemoryStore");
         assertThat(summaryStore.getClass().getSimpleName()).isEqualTo("InMemorySummaryStore");
-        assertThat(knowledgeStore.getClass().getSimpleName()).isEqualTo("InMemoryKnowledgeStore");
+        assertThat(knowledgeStore).isInstanceOf(TenantAwareKnowledgeStore.class);
+        assertThat(((TenantAwareKnowledgeStore) knowledgeStore).delegate().getClass().getSimpleName())
+                .isEqualTo("InMemoryKnowledgeStore");
     }
 }

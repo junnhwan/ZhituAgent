@@ -4,6 +4,9 @@
       "chunkId": {
         "type": "keyword"
       },
+      "tenantId": {
+        "type": "keyword"
+      },
       "source": {
         "type": "keyword"
       },
