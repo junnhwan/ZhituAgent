@@ -46,4 +46,11 @@ class JwtServiceTest {
 
         assertFalse(jwtService.isTokenValid("invalid.token.here"));
     }
+
+    @Test
+    void shouldRejectNullSecret() {
+        JwtProperties props = new JwtProperties();
+        // secret is null by default
+        assertThrows(IllegalArgumentException.class, () -> new JwtService(props));
+    }
 }
