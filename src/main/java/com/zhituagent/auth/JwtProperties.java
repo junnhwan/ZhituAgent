@@ -1,12 +1,10 @@
 package com.zhituagent.auth;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
-@Component
 @ConfigurationProperties(prefix = "zhitu.jwt")
 public class JwtProperties {
-    private String secret = "default-secret-change-me-in-production-32chars!!";
+    private String secret;
     private long expirationMs = 86400000; // 24 hours
     private String issuer = "zhitu-agent";
 
