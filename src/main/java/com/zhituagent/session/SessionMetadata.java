@@ -11,6 +11,7 @@ public class SessionMetadata {
     private String title;
     private final OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private String tenantId;
 
     public SessionMetadata(String sessionId, String userId, String title, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         this.sessionId = sessionId;
@@ -46,6 +47,14 @@ public class SessionMetadata {
 
     public void touch() {
         this.updatedAt = OffsetDateTime.now();
+    }
+
+    public String getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(String tenantId) {
+        this.tenantId = tenantId;
     }
 
     public SessionResponse toResponse() {

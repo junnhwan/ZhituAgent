@@ -19,6 +19,7 @@ import com.zhituagent.rag.RerankClient;
 import com.zhituagent.session.InMemorySessionRepository;
 import com.zhituagent.session.RedisSessionRepository;
 import com.zhituagent.session.SessionRepository;
+import com.zhituagent.session.TenantAwareSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -30,6 +31,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import org.springframework.beans.factory.ObjectProvider;
+
 import java.net.http.HttpClient;
 
 @Configuration
@@ -38,15 +41,14 @@ public class InfrastructureConfig {
     private static final Logger log = LoggerFactory.getLogger(InfrastructureConfig.class);
 
     @Bean
-    @ConditionalOnProperty(prefix = "zhitu.infrastructure", name = "redis-enabled", havingValue = "true")
-    SessionRepository redisSessionRepository(StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper) {
-        return new RedisSessionRepository(stringRedisTemplate, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(SessionRepository.class)
-    SessionRepository inMemorySessionRepository() {
-        return new InMemorySessionRepository();
+    SessionRepository sessionRepository(
+            ObjectProvider<StringRedisTemplate> redisTemplateProvider,
+            ObjectMapper objectMapper,
+            @org.springframework.beans.factory.annotation.Value("${zhitu.infrastructure.redis-enabled:false}") boolean redisEnabled) {
+        SessionRepository delegate = (redisEnabled && redisTemplateProvider.getIfAvailable() != null)
+                ? new RedisSessionRepository(redisTemplateProvider.getObject(), objectMapper)
+                : new InMemorySessionRepository();
+        return new TenantAwareSessionRepository(delegate);
     }
 
     @Bean
@@ -120,11 +122,15 @@ public class InfrastructureConfig {
         SessionRepository sr = ctx.getBean(SessionRepository.class);
         MemoryStore ms = ctx.getBean(MemoryStore.class);
         SummaryStore ss = ctx.getBean(SummaryStore.class);
+        String sessionRepoDelegate = (sr instanceof TenantAwareSessionRepository tasr)
+                ? tasr.delegate().getClass().getSimpleName()
+                : sr.getClass().getSimpleName();
         log.info(
-                "ZhituAgent active stores: KnowledgeStore={} (nativeHybrid={}), SessionRepository={}, MemoryStore={}, SummaryStore={}",
+                "ZhituAgent active stores: KnowledgeStore={} (nativeHybrid={}), SessionRepository={} (delegate={}), MemoryStore={}, SummaryStore={}",
                 ks.getClass().getSimpleName(),
                 ks instanceof ElasticsearchKnowledgeStore,
                 sr.getClass().getSimpleName(),
+                sessionRepoDelegate,
                 ms.getClass().getSimpleName(),
                 ss.getClass().getSimpleName());
     }

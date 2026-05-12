@@ -5,6 +5,7 @@ import com.zhituagent.memory.MemoryStore;
 import com.zhituagent.memory.SummaryStore;
 import com.zhituagent.rag.KnowledgeStore;
 import com.zhituagent.session.SessionRepository;
+import com.zhituagent.session.TenantAwareSessionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,7 +34,9 @@ class InfrastructureWiringTest {
 
     @Test
     void shouldUseInMemoryInfrastructureBeansByDefault() {
-        assertThat(sessionRepository.getClass().getSimpleName()).isEqualTo("InMemorySessionRepository");
+        assertThat(sessionRepository).isInstanceOf(TenantAwareSessionRepository.class);
+        assertThat(((TenantAwareSessionRepository) sessionRepository).delegate().getClass().getSimpleName())
+                .isEqualTo("InMemorySessionRepository");
         assertThat(memoryStore.getClass().getSimpleName()).isEqualTo("InMemoryMemoryStore");
         assertThat(summaryStore.getClass().getSimpleName()).isEqualTo("InMemorySummaryStore");
         assertThat(knowledgeStore.getClass().getSimpleName()).isEqualTo("InMemoryKnowledgeStore");

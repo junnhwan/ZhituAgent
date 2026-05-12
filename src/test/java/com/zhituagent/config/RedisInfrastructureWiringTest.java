@@ -4,6 +4,7 @@ import com.zhituagent.ZhituAgentApplication;
 import com.zhituagent.memory.MemoryStore;
 import com.zhituagent.memory.SummaryStore;
 import com.zhituagent.session.SessionRepository;
+import com.zhituagent.session.TenantAwareSessionRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +35,9 @@ class RedisInfrastructureWiringTest {
 
     @Test
     void shouldUseRedisInfrastructureBeansWhenRedisIsEnabled() {
-        assertThat(sessionRepository.getClass().getSimpleName()).isEqualTo("RedisSessionRepository");
+        assertThat(sessionRepository).isInstanceOf(TenantAwareSessionRepository.class);
+        assertThat(((TenantAwareSessionRepository) sessionRepository).delegate().getClass().getSimpleName())
+                .isEqualTo("RedisSessionRepository");
         assertThat(memoryStore.getClass().getSimpleName()).isEqualTo("RedisMemoryStore");
         assertThat(summaryStore.getClass().getSimpleName()).isEqualTo("RedisSummaryStore");
     }
