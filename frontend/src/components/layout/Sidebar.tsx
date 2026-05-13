@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
-import { MessageSquarePlus, Settings, Layers, Activity, MessageCircle, Upload } from "lucide-react";
+import { MessageSquarePlus, Settings, Layers, Activity, MessageCircle, Upload, LogOut } from "lucide-react";
 import type { SessionState } from "../../hooks/types";
+import { useAuth } from "../../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import "./Sidebar.css";
 
 function hashHue(id: string): number {
@@ -43,6 +45,14 @@ export default function Sidebar({
   onViewChat: () => void;
   onViewSre: () => void;
 }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
   return (
     <>
       <div className="nav-logo">
@@ -149,6 +159,17 @@ export default function Sidebar({
         whileTap={{ scale: 0.92 }}
       >
         <Settings size={20} />
+      </motion.button>
+
+      <motion.button
+        type="button"
+        className="nav-icon-btn ghost"
+        onClick={handleLogout}
+        title="退出登录"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.92 }}
+      >
+        <LogOut size={20} />
       </motion.button>
 
       <SidebarStyles />
