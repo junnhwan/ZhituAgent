@@ -2,6 +2,7 @@ package com.zhituagent.auth;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -17,23 +18,33 @@ public class UserService {
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final StringRedisTemplate redisTemplate;
-    // Fallback in-memory store when Redis is unavailable
     private final Map<String, User> memoryFallback = new ConcurrentHashMap<>();
 
-    public UserService(StringRedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
-    }
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
 
     public User create(String tenantId, String email, String password) {
         String key = redisKey(tenantId, email);
+        if (memoryFallback.containsKey(key)) {
+            throw new IllegalArgumentException("Email already registered");
+        }
+
+        if (redisTemplate != null) {
+            String existing = redisTemplate.opsForValue().get(key);
+            if (existing != null) {
+                throw new IllegalArgumentException("Email already registered");
+            }
+        }
+
         User user = new User(tenantId, email.toLowerCase(), passwordEncoder.encode(password));
 
-        try {
-            String json = objectMapper.writeValueAsString(user);
-            redisTemplate.opsForValue().set(key, json);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize user", e);
+        if (redisTemplate != null) {
+            try {
+                String json = objectMapper.writeValueAsString(user);
+                redisTemplate.opsForValue().set(key, json);
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException("Failed to serialize user", e);
+            }
         }
 
         memoryFallback.put(key, user);
@@ -43,17 +54,16 @@ public class UserService {
     public Optional<User> findByEmail(String tenantId, String email) {
         String key = redisKey(tenantId, email);
 
-        String json = redisTemplate.opsForValue().get(key);
-        if (json != null) {
-            try {
-                User user = objectMapper.readValue(json, User.class);
-                return Optional.of(user);
-            } catch (JsonProcessingException e) {
-                return Optional.empty();
+        if (redisTemplate != null) {
+            String json = redisTemplate.opsForValue().get(key);
+            if (json != null) {
+                try {
+                    return Optional.of(objectMapper.readValue(json, User.class));
+                } catch (JsonProcessingException ignored) {
+                }
             }
         }
 
-        // Fallback to memory if Redis missed
         return Optional.ofNullable(memoryFallback.get(key));
     }
 
