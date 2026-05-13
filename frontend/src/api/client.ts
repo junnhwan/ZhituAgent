@@ -36,7 +36,8 @@ export async function request<T>(
 
   if (!res.ok) {
     // Handle 401 Unauthorized - clear token and redirect to login
-    if (res.status === 401) {
+    // Skip auth endpoints (login/register) where 401 means bad credentials, not expired session
+    if ((res.status === 401 || res.status === 403) && !path.startsWith("/api/auth/")) {
       localStorage.removeItem("zhitu_token");
       window.location.href = "/login";
       throw new ApiError("UNAUTHORIZED", "Session expired", "", "auth");
