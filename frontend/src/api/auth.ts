@@ -17,14 +17,14 @@ interface LoginRequest {
 
 export const authApi = {
   login: async (req: LoginRequest): Promise<AuthResponse> => {
-    return request<AuthResponse>('/auth/login', {
+    return request<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(req),
     });
   },
 
   register: async (req: LoginRequest): Promise<AuthResponse> => {
-    return request<AuthResponse>('/auth/register', {
+    return request<AuthResponse>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(req),
     });
